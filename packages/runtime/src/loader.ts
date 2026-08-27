@@ -31,10 +31,17 @@ export const PACK_MANIFEST_FILE = 'pack.json';
 export interface LoadOptions {
   readonly packsDir: string;
   /**
-   * Directory names to consider, instead of enumerating packsDir. Used by the determinism test to
-   * stand in for the filesystem returning entries in a different order on a different machine.
+   * Substitutes the directory READ, not its result. The seam sits strictly below the sort.
+   *
+   * The previous seam was an `entries` array short-circuiting the enumeration, which put it ABOVE
+   * the sort and created a branch. Moving the sort into that branch left the real `readdir`
+   * unsorted with every test green, because the tests that inject took the sorted path and the one
+   * that does not took NTFS, which happens to enumerate in order already. A guardrail whose failure
+   * depends on the developer's filesystem is green by construction on the developer's machine.
+   *
+   * There is now one path and no branch, so there is nowhere to move the sort to. See ADR-0053.
    */
-  readonly entries?: readonly string[];
+  readonly readDirectory?: (packsDir: string) => Promise<readonly string[]>;
 }
 
 export interface LoadedPack {
@@ -116,16 +123,19 @@ interface DiscoveredPack {
   readonly manifest: PackManifest;
 }
 
-async function enumerate(options: LoadOptions): Promise<Result<readonly string[], LoadError>> {
-  if (options.entries !== undefined) return ok(options.entries);
+async function readPackDirectory(packsDir: string): Promise<readonly string[]> {
+  const dirents = await readdir(packsDir, { withFileTypes: true });
+  const names: string[] = [];
+  for (const dirent of dirents) {
+    if (dirent.isDirectory()) names.push(dirent.name);
+  }
+  return names;
+}
 
+async function listCandidateDirs(options: LoadOptions): Promise<Result<readonly string[], LoadError>> {
+  let names: readonly string[];
   try {
-    const dirents = await readdir(options.packsDir, { withFileTypes: true });
-    const names: string[] = [];
-    for (const dirent of dirents) {
-      if (dirent.isDirectory()) names.push(dirent.name);
-    }
-    return ok(names);
+    names = await (options.readDirectory ?? readPackDirectory)(options.packsDir);
   } catch (cause) {
     const code = (cause as NodeJS.ErrnoException).code;
     if (code === 'ENOENT' || code === 'ENOTDIR') {
@@ -138,18 +148,15 @@ async function enumerate(options: LoadOptions): Promise<Result<readonly string[]
     }
     return err({ code: 'packs-dir-missing', message: `Cannot read ${options.packsDir}: ${String(cause)}.` });
   }
-}
 
-async function listCandidateDirs(options: LoadOptions): Promise<Result<readonly string[], LoadError>> {
-  const found = await enumerate(options);
-  if (!found.ok) return found;
-
-  // ONE sort site, deliberately. readdir order depends on the filesystem, so it differs between
-  // this machine and a player's, and that difference would reach handle assignment through the
-  // topological sort's tie-breaks (ADR-0011). Sorting here rather than inside each branch is what
-  // lets the determinism test cover the readdir path: the test injects `entries`, so a second sort
-  // hidden in the readdir branch would go untested while looking perfectly correct.
-  return ok([...found.value].sort(compareCodeUnits));
+  // ONE path and ONE sort, with the seam strictly above this line.
+  //
+  // readdir order depends on the filesystem, so it differs between this machine and a player's, and
+  // that difference reaches handle assignment through the topological sort's tie-breaks (ADR-0011).
+  // The earlier shape had two branches - injected entries and real readdir - and moving the sort
+  // into the injected one left the real one unsorted while every test stayed green. There is no
+  // second branch here to move it to.
+  return ok([...names].sort(compareCodeUnits));
 }
 
 async function readManifest(packsDir: string, dirName: string): Promise<Result<DiscoveredPack | null, LoadError>> {

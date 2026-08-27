@@ -248,17 +248,32 @@ describe('invariant: no sim API accepts a function', () => {
         return;
       }
 
-      // Type arguments, not "array elements". `{ on(cb) }[]` escaped a walk that followed
-      // properties only, because an array's own members belong to the standard library and are
-      // skipped, so the element type was never reached. Following arguments generally covers
-      // arrays, ReadonlyArray, Map, Promise and any generic this repository writes later — the
-      // class of containers rather than the one that was demonstrated.
+      /*
+       * Three ways a type exposes something, and all three are enumerators.
+       *
+       * Properties are one. Type arguments are the second: `{ on(cb) }[]` escaped a
+       * properties-only walk, because an array's own members belong to the standard library and are
+       * skipped, so the element type was never reached. Index signatures are the third:
+       * `Record<string, CB>` declares no properties at all, so `getProperties()` returns nothing and
+       * the descent stopped dead — while `table['x'](cb)` compiles perfectly.
+       *
+       * The axis differs: type arguments are how a value is WRAPPED, index signatures are how a type
+       * DECLARES its members. Same class of gap, and the reason to enumerate all three at once
+       * rather than adding the one that was demonstrated.
+       */
       if ((type.flags & ts.TypeFlags.Object) !== 0) {
         for (const argument of checker.getTypeArguments(type as ts.TypeReference)) {
-          walkSurface(`${owner}[]`, argument, seen);
+          walkContained(`${owner}[]`, argument, seen);
         }
       }
+      for (const info of checker.getIndexInfosOfType(type)) {
+        walkContained(`${owner}[key]`, info.type, seen);
+      }
 
+      // Named properties: methods on shapes we declare, and everything they reach in turn. This
+      // loop was accidentally orphaned into walkContained by an edit that closed the function one
+      // brace early, which switched off the entire property descent while the suite stayed green -
+      // caught by the verifier case for the object literal, one commit after writing it.
       for (const property of type.getProperties()) {
         const declaration = property.getDeclarations()?.[0];
         if (declaration === undefined) continue;
@@ -273,6 +288,27 @@ describe('invariant: no sim API accepts a function', () => {
           seen,
         );
       }
+    }
+
+    /**
+     * What sits INSIDE a container, where a callable is a deposit point rather than a method.
+     *
+     * `export const sinks: Record<string, CB> = {}` takes no function as a parameter, so the test's
+     * own title — "no exported signature takes a callable parameter" — is satisfied. CLAUDE.md says
+     * something wider: "No sim API accepts a function", and a mutable exported registry where a mod
+     * drops a callback is precisely what DataOnly exists to prevent. The wider wording governs.
+     *
+     * The line is between a named property and a container slot. `SimPort.send` is a method: our
+     * behaviour, on a shape we declare. A value reached through an index signature or a type
+     * argument is a slot someone else fills. Flagging every callable property would flag every
+     * method we export, which is not the invariant.
+     */
+    function walkContained(owner: string, type: ts.Type, seen: Set<ts.Type>): void {
+      if (type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0) {
+        offenders.push(`${owner}: a container slot a mod can fill with a function`);
+        return;
+      }
+      walkSurface(owner, type, seen);
     }
 
     for (const exported of checker.getExportsOfModule(moduleSymbol)) {

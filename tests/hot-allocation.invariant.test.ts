@@ -1,3 +1,4 @@
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import ts from 'typescript';
@@ -7,21 +8,22 @@ import { copyRegion, countValue, fillRegion, findFirst } from '@myfactorio/sim';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
- * Which functions this file must account for, derived from what `sim` exports.
+ * Which functions this file must account for: the UNION of two derivations.
  *
- * The first version imported four names by hand, so a fifth hot function was measured by nobody.
- * The second derived them from the contents of `packages/sim/src/hot/` — which closed that, and
- * re-anchored the guarantee on a directory name, the very thing ADR-0036 says is "not a property of
- * the code". Moving a hot function to `sim/src/step.ts` took it out of the lint and out of the
- * derivation in one gesture.
+ * Three versions, and the third broke what the second covered. A hand-written import list missed a
+ * fifth hot function. Deriving from `packages/sim/src/hot/` fixed that and re-anchored the
+ * guarantee on a directory name — the very thing ADR-0036 calls "not a property of the code" —
+ * so moving a hot function to `sim/src/step.ts` escaped lint and derivation together. Deriving
+ * from sim's exports fixed THAT, and silently dropped the unexported function in `hot/` that the
+ * directory derivation had been catching: `describeRegion` building a string with `+=`, which is
+ * the one hole ADR-0010 names, in the one directory where nothing else would see it.
  *
- * "Exported by sim" IS a property of the code. Every exported callable is either exercised here or
- * declared cold with a reason, and the two sets must together be exactly what sim exports. A
- * function that moves between directories stays in the set; a new one has to be classified.
+ * The two sets are not nested, and swapping one for the other was treated as a widening. Both are
+ * properties of the code, and both are used. Every callable that sim exports, plus every function
+ * in `hot/`, is either exercised here or declared cold with a reason.
  *
- * The remaining edge, stated rather than left implicit: a hot function that sim does not export
- * escapes this. It is then unreachable from outside the package, and the lint on `hot/` still
- * applies if it lives there.
+ * Replacing a mechanism with a better one can uncover what the old one covered, and nothing in
+ * `pnpm check` compares the reach before to the reach after. See ADR-0052.
  */
 function exportedCallables(): string[] {
   const entry = path.join(repoRoot, 'packages/sim/src/index.ts');
@@ -47,6 +49,21 @@ function exportedCallables(): string[] {
     })
     .map((symbol) => symbol.getName())
     .sort();
+}
+
+/** Every function declared in packages/sim/src/hot/, exported from the package or not. */
+function hotDirectoryFunctions(): string[] {
+  const hotDir = path.join(repoRoot, 'packages/sim/src/hot');
+  return readdirSync(hotDir)
+    .filter((file) => file.endsWith('.ts') && !file.includes('.test.'))
+    .flatMap((file) => [
+      ...readFileSync(path.join(hotDir, file), 'utf8').matchAll(/^export function (\w+)/gm),
+    ])
+    .map((match) => match[1]!);
+}
+
+function covered(): string[] {
+  return [...new Set([...exportedCallables(), ...hotDirectoryFunctions()])].sort();
 }
 
 /** Called in the measurement below. */
@@ -159,11 +176,11 @@ describe('invariant: the hot path allocates nothing', () => {
 
   sink.length = 0;
 
-  it('accounts for every callable sim exports, hot or cold', () => {
+  it('accounts for every callable sim exports AND every function in hot/, hot or cold', () => {
     // A new export is either measured or classified. Silence is not one of the options, and moving
     // a function between directories does not change the answer.
     const accounted = [...EXERCISED, ...Object.keys(COLD)].sort();
-    expect(exportedCallables()).toEqual(accounted);
+    expect(covered()).toEqual(accounted);
   });
 
   it('the instrument can detect allocation at all', () => {

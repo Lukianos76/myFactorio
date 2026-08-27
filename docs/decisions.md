@@ -998,3 +998,74 @@ state where the next edge has not been touched yet.
 `sealAmbientSources()` runs, or a `.constructor` from an instance created earlier, survives.
 Documented, not mechanised. The generic `brand<T>()` launderer stands (ADR-0037). A hot function
 `sim` does not export is outside the derived set, and is measured through whatever calls it.
+
+---
+
+## ADR-0052 — Replacing a mechanism can uncover what the old one covered
+
+**Context.** Hot-path coverage went from a hand-written import list, to the contents of
+`packages/sim/src/hot/`, to what `sim` exports. Each step was better than the last. The third
+silently dropped what the second caught: `describeRegion`, unexported, in `hot/`, building a string
+with `+=` — the one hole ADR-0010 names, in the one directory where nothing else looks. The
+mitigation written in the same breath ("the lint on hot/ still applies") is false for exactly that
+form. The two sets were never nested, and the swap was treated as a widening.
+
+**Decision.** Both derivations, unioned. Every callable `sim` exports, plus every function declared
+in `hot/`, is exercised or declared cold with a reason. Verified: the unexported concatenation, a
+new function in `hot/`, and a function moved out of `hot/` are all refused now.
+
+**Rejected alternative.** Picking the better derivation. "Better on almost everything" is not
+"strictly wider", and nothing in `pnpm check` compares the reach before a change to the reach after.
+Only replaying the full attack battery found this, which is the argument for the battery.
+
+**The pattern, fourth costume.** Rounds one to three said: the mechanism names something narrower
+than the invariant. This one adds the corollary — improving a mechanism is a change of reach, and a
+change of reach can lose ground. It is quieter than the others because the diff reads as progress.
+
+---
+
+## ADR-0053 — The test seam sits below the sort, not above it
+
+**Context.** `LoadOptions.entries` substituted the *result* of enumeration, which put the seam above
+the sort and created two branches. Moving the sort into the injected branch left the real `readdir`
+unsorted with every test green: the injecting tests took the sorted path, and the one test without
+injection ran on NTFS, which enumerates in order anyway. A guardrail whose failure depends on the
+developer's filesystem is green by construction on the developer's machine.
+
+**Decision.** `readDirectory` replaces `entries`. It substitutes the directory READ, not its result,
+so there is one path, no branch, and nowhere to move the sort to. Verified: removal and inversion
+both fail; relocating the sort within the single path is now an equivalent program rather than a
+bypass.
+
+**Rejected alternative.** Keeping `entries` and adding more no-injection tests. Those tests assert
+what the filesystem already does, so they confirm the platform rather than the code — the same
+"green by construction" the seam created.
+
+**And the invariant-4 question.** `readDirectory` is a function parameter on a public API. Invariant
+4 governs `sim`, where a mod supplies data; `runtime` is host code and this is a seam, named as one.
+
+---
+
+## ADR-0054 — A deleted attack case is as loud as a red one
+
+**Context.** Raised in three consecutive reviews: attack cases are worth something only replayed.
+`verify:guardrails` runs in CI on every push, so a case that goes red is loud. A case deleted, or
+weakened until it cannot fail, moves the denominator and nothing else — the shape of the
+`expect: /...|error/` that sat in the score for two sessions.
+
+**Decision.** `tests/verifier-coverage.invariant.test.ts` freezes every bypass that has been
+demonstrated and closed. Removing or renaming a case fails the suite. Adding cases stays free, which
+is the direction that should be cheap.
+
+**Also mechanical now: the stale anchor.** A case whose `s.replace(...)` no longer matches returns
+its input unchanged, so the case runs against pristine code, the tool passes, and it reports MISS for
+a guardrail that works. Five occurrences, always after a refactor moved a pinned line. The verifier
+now detects an edit that changed nothing and says so, instead of leaving the next reader to diff by
+hand.
+
+**What this does not do.** ADR-0051 stands: no mechanism here derives the case list. Somebody still
+decides what to try. This makes the list ratchet one way.
+
+**Found by its own case.** The object-literal case reported MISS one commit after being written —
+an edit had closed `walkSurface` a brace early, orphaning the entire property descent into the
+neighbouring function while all 195 tests stayed green. The case caught it; reading the diff had not.

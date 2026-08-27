@@ -53,7 +53,8 @@ describe('invariant: loading is deterministic regardless of directory enumeratio
     const packsDir = await buildPacksDir();
 
     // readdir order depends on the filesystem, so it differs between the developer's machine and
-    // the player's. The `entries` option lets us stand in for that variation explicitly.
+    // the player's. readDirectory substitutes the READ, so every ordering below still travels
+    // through the one sort site - the seam is under it, not over it.
     const orderings: readonly string[][] = [
       ['base', 'zulu', 'alpha'],
       ['alpha', 'zulu', 'base'],
@@ -63,7 +64,7 @@ describe('invariant: loading is deterministic regardless of directory enumeratio
 
     const runs = [];
     for (const entries of orderings) {
-      const result = await loadPacks({ packsDir, entries });
+      const result = await loadPacks({ packsDir, readDirectory: async () => entries });
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       runs.push({
@@ -105,8 +106,8 @@ describe('invariant: loading is deterministic regardless of directory enumeratio
       );
     }
 
-    const forward = await loadPacks({ packsDir, entries: ['a_first', 'z_last'] });
-    const backward = await loadPacks({ packsDir, entries: ['z_last', 'a_first'] });
+    const forward = await loadPacks({ packsDir, readDirectory: async () => ['a_first', 'z_last'] });
+    const backward = await loadPacks({ packsDir, readDirectory: async () => ['z_last', 'a_first'] });
     const enumerated = await loadPacks({ packsDir });
 
     for (const result of [forward, backward, enumerated]) {
@@ -136,15 +137,14 @@ describe('invariant: loading is deterministic regardless of directory enumeratio
   });
 
   /**
-   * The real readdir, with no `entries` in sight.
+   * The real filesystem, with no seam at all.
    *
-   * `entries` exists so the test can stand in for a filesystem that enumerates differently. It then
-   * became the only path the tests took, so moving the sort into the injected branch left the actual
-   * readdir unsorted and everything stayed green — a mock that ended up being the thing under test.
-   * Directories are created here in reverse order, and the assertion is on the load order, which is
-   * a claim about the output whatever the filesystem hands back.
+   * Weaker than the tests above by construction: NTFS enumerates in order already, so this cannot
+   * fail on the developer's machine whatever the sort does. It is kept because ext4 in CI hashes,
+   * so it can bite there - but the guarantee comes from the seam sitting below the sort, not from
+   * this. Stated so nobody reads a green tick here as evidence.
    */
-  it('sorts what the filesystem actually returns, with no entries override', async () => {
+  it('loads through the real filesystem with no seam', async () => {
     const packsDir = await mkdtemp(path.join(tmpdir(), 'myfactorio-readdir-'));
     dirs.push(packsDir);
 

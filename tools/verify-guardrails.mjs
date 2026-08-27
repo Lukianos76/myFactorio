@@ -301,7 +301,7 @@ const CASES = [
     edits: [
       [
         'packages/runtime/src/loader.ts',
-        (s) => s.replace('return ok([...found.value].sort(compareCodeUnits));', 'return ok([...found.value]);'),
+        (s) => s.replace('return ok([...names].sort(compareCodeUnits));', 'return ok([...names]);'),
       ],
     ],
     tool: 'pnpm vitest run packages/runtime',
@@ -435,8 +435,8 @@ const CASES = [
         'packages/runtime/src/loader.ts',
         (s) =>
           s.replace(
-            'return ok([...found.value].sort(compareCodeUnits));',
-            'return ok([...found.value].sort(compareCodeUnits).reverse());',
+            'return ok([...names].sort(compareCodeUnits));',
+            'return ok([...names].sort(compareCodeUnits).reverse());',
           ),
       ],
     ],
@@ -444,6 +444,58 @@ const CASES = [
     // produced the SAME message, which a reversed sort satisfies perfectly.
     tool: 'pnpm vitest run packages/runtime',
     expect: /incumbent/,
+  },
+  {
+    invariant: '4',
+    breaks: 'a callback behind an INDEX SIGNATURE, where the type declares no properties at all',
+    edits: [
+      [
+        'packages/sim/src/world.ts',
+        (s) => `${s}\nexport const table: Readonly<Record<string, (handler: (index: number) => void) => void>> = {};\n`,
+      ],
+      ['packages/sim/src/index.ts', (s) => s.replace('  viewWorld,', '  viewWorld,\n  table,')],
+    ],
+    tool: 'pnpm vitest run tests/guardrails',
+    expect: /table/,
+  },
+  {
+    invariant: '4',
+    breaks: 'an exported registry a mod DROPS a callback into, rather than a parameter',
+    edits: [
+      [
+        'packages/sim/src/world.ts',
+        (s) => `${s}\nexport const sinks: Record<string, (index: number) => void> = {};\n`,
+      ],
+      ['packages/sim/src/index.ts', (s) => s.replace('  viewWorld,', '  viewWorld,\n  sinks,')],
+    ],
+    tool: 'pnpm vitest run tests/guardrails',
+    expect: /sinks/,
+  },
+  {
+    invariant: '5 / ADR-0052',
+    breaks: 'string concatenation in an UNEXPORTED hot function, which the export derivation lost',
+    edits: [
+      [
+        'packages/sim/src/hot/buffer-ops.ts',
+        (s) =>
+          `${s}\nexport function describeRegion(cells: Uint16Array, value: number): string {\n` +
+          "  let label = 'v';\n  label += String(value);\n  label += '/';\n  label += String(cells.length);\n  return label;\n}\n",
+      ],
+    ],
+    tool: 'pnpm vitest run tests/hot-allocation',
+    expect: /accounts for every callable/,
+  },
+  {
+    invariant: 'Meta / ADR-0051',
+    breaks: 'deleting a verifier case, which only ever changed the denominator',
+    edits: [
+      [
+        'tools/verify-guardrails.mjs',
+        (s) => s.replace("breaks: 'Math.random inside sim',", "breaks: 'Math.random inside sim (renamed away)',"),
+      ],
+    ],
+    tool: 'pnpm vitest run tests/verifier-coverage',
+    expect: /a demonstrated bypass keeps its case/,
   },
   {
     invariant: '3',
@@ -736,6 +788,7 @@ for (const testCase of CASES) {
   // Restore from a snapshot rather than `git checkout`: files carried in untracked have nothing to
   // check out, and git would silently leave them broken for every later case.
   const originals = new Map();
+  const noop = [];
 
   try {
     for (const [file, transform] of testCase.edits) {
@@ -747,7 +800,24 @@ for (const testCase of CASES) {
       const existed = existsSync(full);
       const before = existed ? readFileSync(full, 'utf8') : '';
       originals.set(full, existed ? before : null);
-      writeFileSync(full, transform(before), 'utf8');
+
+      const after = transform(before);
+
+      // A transform whose anchor no longer matches returns its input unchanged, so the case runs
+      // against pristine code, the tool passes, and the case reports MISS for a guardrail that
+      // works. That has now happened five times, always after a refactor moved the line a case
+      // pinned. Detecting it here says WHY, instead of leaving the next reader to diff by hand.
+      if (existed && after === before) noop.push(file);
+
+      writeFileSync(full, after, 'utf8');
+    }
+
+    if (noop.length > 0) {
+      failures += 1;
+      console.log(`MISS  [inv ${testCase.invariant}] ${testCase.breaks}`);
+      console.log(`        the edit changed nothing in ${noop.join(', ')} - its anchor is stale,`);
+      console.log('        so this case tested pristine code. Fix the anchor, not the guardrail.');
+      continue;
     }
 
     const result = run(testCase.tool, worktree);
