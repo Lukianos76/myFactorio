@@ -20,6 +20,7 @@ export {
   MAGIC,
   CURRENT_VERSION,
   OLDEST_READABLE_VERSION,
+  HEADER_OFFSET,
   writeSave,
 } from './container.js';
 export { type Migration, MIGRATIONS, migrateToCurrent } from './migrate.js';

@@ -13,7 +13,7 @@
  * here, and reported at startup, rather than silently true.
  */
 import { execFileSync, execSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -241,6 +241,26 @@ const CASES = [
     expect: /onCell/,
   },
   {
+    invariant: 'ADR-0032',
+    breaks: 'renaming a v2 header key in the writer, the reader AND the migration at once',
+    edits: [
+      [
+        'packages/save/src/container.ts',
+        (s) => s.replace('chunkTable: doc.chunks,', 'chunks: doc.chunks,'),
+      ],
+      [
+        'packages/save/src/index.ts',
+        (s) => s.replace("migrated.value.header['chunkTable']", "migrated.value.header['chunks']"),
+      ],
+      ['packages/save/src/migrate.ts', (s) => s.replace('chunkTable: [', 'chunks: [')],
+    ],
+    tool: 'pnpm vitest run packages/save',
+    // Asserting on the failing test's NAME, not on free text in the diff. vitest prints byte arrays
+    // and code frames, so /chunkTable/ matched nothing even though the guardrail fired correctly.
+    // The test name is the stable, meaningful thing: it says which guardrail caught it.
+    expect: /pinned by a frozen fixture/,
+  },
+  {
     invariant: '2',
     breaks: 'raising CURRENT_VERSION without adding the migration',
     edits: [
@@ -343,10 +363,18 @@ function setupWorktree() {
     console.log('carried uncommitted changes into the worktree');
   }
 
-  const untracked = git(['ls-files', '--others', '--exclude-standard']).trim();
-  if (untracked !== '') {
-    console.log(`note: ${untracked.split('\n').length} untracked file(s) are NOT carried over`);
+  // Untracked files are invisible to `git diff HEAD`, so they have to be copied. Leaving them
+  // behind and printing a warning was the first design, and it lasted exactly one run: a new test
+  // file plus its new fixture simply were not there, and the case that depended on them reported
+  // MISS for a reason that had nothing to do with the guardrail. A warning is not a mechanism.
+  // .gitignore is respected, so node_modules and build output stay out.
+  const untracked = git(['ls-files', '--others', '--exclude-standard']).split('\n').filter(Boolean);
+  for (const file of untracked) {
+    const dest = path.join(worktree, file);
+    mkdirSync(path.dirname(dest), { recursive: true });
+    copyFileSync(path.join(repoRoot, file), dest);
   }
+  if (untracked.length > 0) console.log(`carried ${untracked.length} untracked file(s) into the worktree`);
 }
 
 function run(command, cwd) {
@@ -378,13 +406,17 @@ let failures = 0;
 console.log('\nBreaking each invariant on purpose and checking that a tool refuses.\n');
 
 for (const testCase of CASES) {
-  const touched = testCase.edits.map(([file]) => file);
+  // Restore from a snapshot rather than `git checkout`: files carried in untracked have nothing to
+  // check out, and git would silently leave them broken for every later case.
+  const originals = new Map();
 
   try {
     for (const [file, transform] of testCase.edits) {
       const full = path.join(worktree, file);
       mkdirSync(path.dirname(full), { recursive: true });
-      const before = testCase.create || !existsSync(full) ? '' : readFileSync(full, 'utf8');
+      const existed = existsSync(full);
+      originals.set(full, existed ? readFileSync(full, 'utf8') : null);
+      const before = testCase.create || !existed ? '' : readFileSync(full, 'utf8');
       writeFileSync(full, transform(before), 'utf8');
     }
 
@@ -426,12 +458,9 @@ for (const testCase of CASES) {
     }
   } finally {
     // Per-case restore keeps cases independent. A crash now costs a stray worktree, nothing more.
-    for (const file of touched) {
-      try {
-        execFileSync('git', ['checkout', '--', file], { cwd: worktree, stdio: 'ignore' });
-      } catch {
-        rmSync(path.join(worktree, file), { force: true });
-      }
+    for (const [full, content] of originals) {
+      if (content === null) rmSync(full, { force: true });
+      else writeFileSync(full, content, 'utf8');
     }
   }
 }

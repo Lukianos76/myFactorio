@@ -547,3 +547,50 @@ found. Scripted `replace()` calls are not used for source changes.
 **Rejected alternative.** Being more careful, or verifying each replacement afterwards. The failure
 mode is precisely that verification gets skipped when the tool says it succeeded. This is ADR-0030
 applied to my own tooling.
+
+---
+
+## ADR-0032 — The current save format has a frozen fixture too
+
+**Context.** `tests/fixtures/save/v1.fsav` is frozen, and its comment explains exactly why
+regenerating it would be worthless: it would test the current writer against itself. The current
+format then had no fixture at all, so `writeSave` and `readSave` were only ever tested against each
+other. Renaming a header key in the writer, the reader and the migration at the same time passed the
+entire suite — and a v2 save written by the shipped build came back `ok: true` with an empty chunk
+table. No error, no `unknown-version`, silent data loss.
+
+**Decision.** `tests/fixtures/save/v2.fsav`, produced by `tools/make-save-fixture.ts` and frozen.
+`format.invariant.test.ts` pins four things: the decoded document, the raw header key names, that
+the current writer still emits these exact bytes, and that both frozen fixtures agree on what a
+palette entry looks like. The byte-identity assertion is the strong one — it turns any drift in the
+writer's output into a failure, which is what a format change is whether or not it was intended.
+
+**Rejected alternative.** Trusting round-trip tests. `write(read(x)) === x` holds no matter how the
+format changes, as long as both ends change together. The general rule: the current format needs a
+fixture at least as much as the old ones do, and freezing it is free today and impossible later.
+
+**When it fails.** Raise `CURRENT_VERSION`, add the migration step, freeze a *new* fixture. Never
+regenerate this one to make the test pass — that deletes the guarantee while appearing to fix it.
+
+---
+
+## ADR-0033 — The verifier carries untracked files, and asserts on test names
+
+**Context.** Two defects found by running the verifier against work in progress, one run apart.
+Untracked files were not carried into the isolated worktree — the script printed a warning and moved
+on — so a brand new test file and its brand new fixture simply were not there, and the case that
+depended on them reported MISS for a reason unrelated to the guardrail. Separately, that case
+asserted `/chunkTable/` against vitest output, which prints byte arrays and code frames rather than
+the key name, so it reported MISS while the guardrail was firing perfectly.
+
+**Decision.** Untracked, non-ignored files are copied into the worktree. Per-case restore works from
+a content snapshot rather than `git checkout`, which has nothing to restore for a file git never
+knew about. Cases driven by vitest assert on the failing test's NAME, which is stable and says which
+guardrail caught the violation.
+
+**Rejected alternative.** Keeping the warning. A warning is not a mechanism — the whole premise of
+this repository — and this one had a lifetime of exactly one run.
+
+**Worth noting.** Both defects failed in the safe direction: a case that cannot pass is visible,
+where a case that cannot fail is counted in the score. `verify-guardrails` case 2 was the dangerous
+form of the same mistake and survived two sessions.
