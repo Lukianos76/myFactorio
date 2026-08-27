@@ -15,7 +15,6 @@
     "gen:verify": "node tools/gen-json-schema.mjs --verify",
     "test": "vitest run",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run arch && pnpm run gen:verify && pnpm run test",
-    "check:full": "pnpm run check",
     "e2e:no-core": "node tools/e2e-no-core.mjs"
   },
   "devDependencies": {
@@ -26,5 +25,8 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.68.0",
     "vitest": "^3.2.7"
+  },
+  "dependencies": {
+    "@myfactorio/rules-schema": "workspace:*"
   }
 }

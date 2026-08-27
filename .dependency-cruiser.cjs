@@ -98,7 +98,7 @@ module.exports = {
   options: {
     doNotFollow: { path: 'node_modules' },
     exclude: {
-      path: '(^|/)(node_modules|dist|out)/|(^|/)tests/fixtures/|\.test\.ts$',
+      path: '(^|/)(node_modules|dist|out)/|(^|/)tests/fixtures/|[.]test[.]ts$',
     },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: 'tsconfig.json' },

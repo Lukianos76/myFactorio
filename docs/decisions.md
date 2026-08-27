@@ -269,3 +269,43 @@ are international; French would close the door on outside mods and contributions
 lint + test.
 
 **Rejected alternative.** Asserting the budget is met because the steps look cheap.
+
+---
+
+## ADR-0018 — The determinism ban covers every package, superseding ADR-0011's scope
+
+**Context.** ADR-0011 banned `Math.random`, `Date.now`, `performance.now`, `new Date()` and
+`localeCompare` in `sim` and `runtime`. Implementation then moved `compareCodeUnits` and the stable
+topological sort into `kernel`, because the scheduler and the loader both need them.
+
+**Decision.** The ban applies to `packages/**`, not to two named packages. This supersedes the
+scope stated in ADR-0011; everything else in that entry stands.
+
+**Rejected alternative.** Keeping the ban on `sim` and `runtime` only. The comparator now lives in
+`kernel`, so a `localeCompare` there would defeat the ban downstream while sitting in a file the
+rule does not look at. A guardrail that stops at the boundary of the package that uses the
+primitive, rather than the one that defines it, is decoration.
+
+**Not extended to `apps/`.** A shell legitimately logs timestamps. Nothing under `packages/` has a
+legitimate need for ambient time or randomness.
+
+---
+
+## ADR-0019 — `no-non-null-assertion` is off, centrally
+
+**Context.** `noUncheckedIndexedAccess` is on, so every indexed read is `T | undefined`. With
+typescript-eslint's strict preset also banning `!`, eight sites across the codebase failed lint on
+first run — all of them bounds-checked loop bodies.
+
+**Decision.** `@typescript-eslint/no-non-null-assertion` is disabled once, in the base block, with
+the reason written next to it.
+
+**Rejected alternative.** Leaving the rule on and adding a guard at each site. In `sim/src/hot/`
+that is a branch inside the inner loop, which is the one place we have committed to spending
+nothing; elsewhere it is noise around an access the surrounding loop already proved safe. The real
+outcome would have been eight inline suppressions accumulating over time — the same failure mode
+ADR-0010 identified for the hot-path rule, arrived at from the other direction. Deciding it once,
+here, is honest; letting it be worked around case by case is not.
+
+**What still holds the line.** `noUncheckedIndexedAccess` itself stays on, so the compiler still
+forces the author to look at every indexed read and say what they mean.

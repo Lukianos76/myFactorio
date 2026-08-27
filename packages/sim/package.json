@@ -8,6 +8,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./worker": {
+      "types": "./src/worker/worker.ts",
+      "default": "./src/worker/worker.ts"
     }
   },
   "dependencies": {

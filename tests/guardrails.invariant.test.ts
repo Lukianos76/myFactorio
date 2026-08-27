@@ -92,16 +92,34 @@ function typeTakesCallable(checker: ts.TypeChecker, type: ts.Type, seen: Set<ts.
     return type.types.some((member) => typeTakesCallable(checker, member, seen));
   }
 
-  // Binary payloads (typed arrays, SharedArrayBuffer) carry methods; their own properties are not
-  // part of the API surface a mod supplies, so they are not walked.
-  const name = type.getSymbol()?.getName() ?? '';
-  if (/Array$|ArrayBuffer$|^DataView$/.test(name)) return false;
+  // Primitives carry apparent methods (Number.prototype.toFixed and friends). Those are not part
+  // of what a caller supplies, so walking into them would flag every numeric parameter.
+  const PRIMITIVE =
+    ts.TypeFlags.Any |
+    ts.TypeFlags.Unknown |
+    ts.TypeFlags.Never |
+    ts.TypeFlags.Void |
+    ts.TypeFlags.Undefined |
+    ts.TypeFlags.Null |
+    ts.TypeFlags.NumberLike |
+    ts.TypeFlags.StringLike |
+    ts.TypeFlags.BooleanLike |
+    ts.TypeFlags.BigIntLike |
+    ts.TypeFlags.ESSymbolLike |
+    ts.TypeFlags.EnumLike;
+  if ((type.flags & PRIMITIVE) !== 0) return false;
 
   return type.getProperties().some((property) => {
     const declarations = property.getDeclarations();
     if (!declarations || declarations.length === 0) return false;
-    const propertyType = checker.getTypeOfSymbolAtLocation(property, declarations[0]!);
-    return typeTakesCallable(checker, propertyType, seen);
+    const declaration = declarations[0]!;
+
+    // Only walk shapes this repo declares. Binary payloads (SharedArrayBuffer, typed arrays) come
+    // from the standard library and carry methods that are theirs, not part of our API surface.
+    const file = declaration.getSourceFile().fileName;
+    if (!file.includes('/packages/') || file.includes('/node_modules/')) return false;
+
+    return typeTakesCallable(checker, checker.getTypeOfSymbolAtLocation(property, declaration), seen);
   });
 }
 

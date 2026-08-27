@@ -73,6 +73,12 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/consistent-type-imports': 'error',
       '@typescript-eslint/no-explicit-any': 'error',
+      // Off deliberately, and centrally. noUncheckedIndexedAccess is on, so every indexed read is
+      // T | undefined; combined with a ban on `!` the only way through a bounds-checked loop is a
+      // redundant guard on every access - a branch in the hot path, and noise everywhere else. The
+      // rule would be worked around case by case, which is worse than deciding it once here.
+      // See ADR-0019.
+      '@typescript-eslint/no-non-null-assertion': 'off',
       'no-restricted-syntax': [
         'error',
         {
@@ -87,7 +93,11 @@ export default tseslint.config(
     rules: { 'no-restricted-syntax': 'off' },
   },
   {
-    files: ['packages/sim/**/*.ts', 'packages/runtime/**/*.ts'],
+    // Every package, not just sim and runtime. compareCodeUnits lives in kernel, so a localeCompare
+    // there would defeat the ban downstream while looking perfectly innocent. Nothing under
+    // packages/ has a legitimate need for ambient time or randomness. apps/ is another matter:
+    // a shell logs timestamps. See ADR-0018.
+    files: ['packages/**/*.ts'],
     rules: {
       'no-restricted-properties': ['error', ...ambientSourceProperties],
       'no-restricted-syntax': ['error', ...ambientSourceSyntax],
@@ -112,6 +122,19 @@ export default tseslint.config(
     rules: {
       'no-restricted-syntax': ['error', ...hotPathSyntax, ...ambientSourceSyntax],
       'no-restricted-properties': ['error', ...hotPathProperties, ...ambientSourceProperties],
+    },
+  },
+  {
+    files: ['tools/**/*.mjs'],
+    languageOptions: {
+      globals: { process: 'readonly', console: 'readonly' },
+    },
+  },
+  {
+    files: ['**/*.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: { module: 'writable', require: 'readonly', __dirname: 'readonly' },
     },
   },
   {

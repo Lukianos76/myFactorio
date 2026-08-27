@@ -2,13 +2,18 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { cruise, type ICruiseOptions, type ICruiseResult } from 'dependency-cruiser';
+import {
+  cruise,
+  type ICruiseOptions,
+  type ICruiseResult,
+  type IForbiddenRuleType,
+} from 'dependency-cruiser';
 
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 interface DepcruiseConfig {
-  forbidden: ICruiseOptions['ruleSet'] extends { forbidden?: infer F } ? F : never;
+  forbidden: IForbiddenRuleType[];
   options: Partial<ICruiseOptions>;
 }
 const config = require(path.join(repoRoot, '.dependency-cruiser.cjs')) as DepcruiseConfig;
@@ -16,6 +21,9 @@ const config = require(path.join(repoRoot, '.dependency-cruiser.cjs')) as Depcru
 async function cruiseWith(targets: string[], overrides: Partial<ICruiseOptions>) {
   const result = await cruise(targets, {
     ...config.options,
+    // Without this the API builds the graph and never evaluates the rules, so every assertion
+    // about violations passes vacuously. The CLI sets it for you; the API does not.
+    validate: true,
     ruleSet: { forbidden: config.forbidden },
     outputType: 'json',
     ...overrides,
@@ -54,7 +62,7 @@ describe('invariant: dependencies flow strictly downward', () => {
 
   it('generates one layer rule per package, so the ordering cannot drift', () => {
     const layerRules = config.forbidden
-      .map((rule) => rule.name)
+      .map((rule) => rule.name ?? '')
       .filter((name) => name.startsWith('no-import-below:'));
 
     // 8 packages, the lowest one has nothing below it, so 7 rules.

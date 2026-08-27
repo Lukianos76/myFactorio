@@ -1,0 +1,5 @@
+* text=auto eol=lf
+
+# Frozen binary fixtures. Never let a newline conversion touch these: the whole point of
+# tests/fixtures/save/v1.fsav is that its bytes are exactly what the v1 writer produced.
+*.fsav binary

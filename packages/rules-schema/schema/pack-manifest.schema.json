@@ -1,0 +1,75 @@
+{
+  "$id": "https://myfactorio.dev/schema/pack-manifest.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$",
+      "description": "Pack namespace. Owns every content id the pack declares."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable pack name."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Pack version."
+    },
+    "dependencies": {
+      "default": {},
+      "description": "Packs that must load before this one, by namespace.",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z0-9_]+$",
+        "description": "Pack namespace. Owns every content id the pack declares."
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+        "description": "Pack version."
+      }
+    },
+    "rules": {
+      "default": [],
+      "description": "Declarative rules contributed by this pack.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+:[a-z0-9_/]+$",
+            "description": "Fully qualified content id."
+          },
+          "constants": {
+            "default": [],
+            "description": "Constant pool for this rule. Data only: a rule can never carry code.",
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "description": "A single declarative rule."
+      }
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "version"
+  ],
+  "additionalProperties": false,
+  "description": "pack.json — the manifest every content pack provides, base content included."
+}

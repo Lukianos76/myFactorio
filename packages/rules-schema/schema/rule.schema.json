@@ -1,0 +1,28 @@
+{
+  "$id": "https://myfactorio.dev/schema/rule.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+:[a-z0-9_/]+$",
+      "description": "Fully qualified content id."
+    },
+    "constants": {
+      "default": [],
+      "description": "Constant pool for this rule. Data only: a rule can never carry code.",
+      "maxItems": 256,
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991
+      }
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "additionalProperties": false,
+  "description": "A single declarative rule."
+}
