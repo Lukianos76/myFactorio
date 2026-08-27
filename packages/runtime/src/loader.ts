@@ -64,7 +64,9 @@ export type LoadErrorCode =
   | 'missing-dependency'
   | 'dependency-cycle'
   | 'dependency-version-mismatch'
-  | 'compile-failed';
+  | 'compile-failed'
+  | 'unreadable-manifest'
+  | 'unexpected-error';
 
 export interface LoadError {
   readonly code: LoadErrorCode;
@@ -134,8 +136,17 @@ async function readManifest(packsDir: string, dirName: string): Promise<Result<D
   let raw: string;
   try {
     raw = await readFile(manifestPath, 'utf8');
-  } catch {
-    return ok(null);
+  } catch (cause) {
+    // Only "there is no manifest here" means "this directory is not a pack". The catch used to
+    // swallow everything, so a manifest that existed but could not be read - a directory named
+    // pack.json, a permission problem, a bad symlink - turned the pack into one that was simply not
+    // there. A player whose mod silently vanished has no way to find out why.
+    const code = (cause as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return ok(null);
+    return err({
+      code: 'unreadable-manifest',
+      message: `${manifestPath} exists but cannot be read: ${String(cause)}.`,
+    });
   }
 
   let parsed: unknown;
@@ -156,7 +167,44 @@ async function readManifest(packsDir: string, dirName: string): Promise<Result<D
   return ok({ dir, dirName, manifest: validated.data });
 }
 
+/**
+ * "This never throws" was asserted everywhere and tested on one happy path: an empty directory.
+ *
+ * Every individual failure below is handled and returned, and that is worth doing because it is
+ * what produces a message a player can act on. But auditing each line is not a mechanism — one
+ * unguarded `JSON.parse` on a sidecar file, added later by someone who read the doc comment and
+ * believed it, sends a SyntaxError all the way to the shell's main(), which writes `fatal` and
+ * exits before the window that would have explained the problem ever opens.
+ *
+ * So the promise is kept structurally as well: anything unexpected becomes a Result here. The
+ * message carries the original error, so this converts a crash into a legible failure rather than
+ * hiding a bug. See ADR-0044.
+ */
 export async function loadPacks(options: LoadOptions): Promise<Result<LoadedPacks, LoadError>> {
+  try {
+    return await loadPacksOrThrow(options);
+  } catch (cause) {
+    // Read defensively: the first version interpolated options.packsDir straight into the message,
+    // and a hostile options object threw again from inside the catch - a safety net that fails the
+    // same way as what it was catching. The error path has to be at least as robust as the happy
+    // one, and the test that found this passes a getter that explodes.
+    let where = '(unknown directory)';
+    try {
+      where = String(options.packsDir);
+    } catch {
+      /* keep the placeholder */
+    }
+
+    return err({
+      code: 'unexpected-error',
+      message:
+        `Loading content from ${where} failed in a way the loader did not anticipate: ` +
+        `${String(cause)}. This is a bug; the game continues without content.`,
+    });
+  }
+}
+
+async function loadPacksOrThrow(options: LoadOptions): Promise<Result<LoadedPacks, LoadError>> {
   const candidates = await listCandidateDirs(options);
   if (!candidates.ok) return candidates;
 

@@ -797,3 +797,46 @@ with the failing output if any is already red. Ten tools, once each, not once pe
 **Rejected alternative.** Asserting harder on the refusal text. That checks the message, not the
 transition, and four cases have already failed on message-matching for reasons unrelated to their
 guardrail.
+
+---
+
+## ADR-0044 — "Never throws" is held structurally, not by audit
+
+**Context.** `result.ts` is the first file in `kernel` and its comment says why the loader must not
+throw: the shell has to open a window and show a readable message rather than dying before it draws
+anything. The only proof was the empty-directory test — one happy path standing in for every unhappy
+one. An unguarded `JSON.parse` on a sidecar file, added later by someone who read that comment and
+believed it, sends a `SyntaxError` to the shell's `main()`, which writes `fatal` and exits.
+
+**Decision.** Two layers. Every anticipated failure is still handled individually, because that is
+what produces a message a player can act on. And `loadPacks` wraps the whole body, turning anything
+unanticipated into `unexpected-error` with the original error in the message. Plus a corpus of
+seventeen hostile directories — truncated JSON, a manifest that is a folder, a BOM, a dangling
+symlink, two hundred nested arrays, a dangling dependency version — each asserting a Result comes
+back at all.
+
+**Rejected alternative.** Auditing each line and keeping the doc comment. Auditing is not a
+mechanism, and the comment is what convinces the next person they need not check.
+
+**Not a way to hide bugs.** The catch-all carries the original error, so a crash becomes a legible
+failure that a named test points at. The verifier case demonstrates the trade: introduce the
+unguarded parse and the hostile suite stays green — the invariant holds — while
+"loads the shipped core-empty pack" goes red.
+
+**Found by the test, in the safety net itself.** The first version interpolated `options.packsDir`
+into the failure message, so a hostile options object threw again from inside the `catch`. The error
+path has to be at least as robust as the happy path, which is easy to write and easy to forget.
+
+---
+
+## ADR-0045 — A manifest that cannot be read is not a missing manifest
+
+**Context.** `readManifest` caught every error from `readFile` and returned "this directory is not a
+pack". A `pack.json` that existed but could not be read — a directory of that name, a permission
+problem, a bad symlink — made the mod silently disappear, and the player had nothing to go on.
+
+**Decision.** Only `ENOENT` means "not a pack". Anything else is `unreadable-manifest`, naming the
+path and the underlying error.
+
+**Rejected alternative.** Catching broadly for robustness. Turning a diagnosable failure into an
+absence is not robustness; it is the loss of the only information anyone had.

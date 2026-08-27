@@ -122,6 +122,28 @@ const CASES = [
     expect: /no dependency-cruiser rule matches|runtime -> save/,
   },
   {
+    invariant: 'ADR-0044',
+    breaks: 'an unguarded JSON.parse on a sidecar file, the way the doc comment invites',
+    edits: [
+      [
+        'packages/runtime/src/loader.ts',
+        (s) =>
+          s.replace(
+            '  return ok({ dir, dirName, manifest: validated.data });',
+            "  const sidecar = await readFile(path.join(dir, 'pack.lock.json'), 'utf8').catch(() => '{');\n" +
+              '  JSON.parse(sidecar);\n' +
+              '  return ok({ dir, dirName, manifest: validated.data });',
+          ),
+      ],
+    ],
+    tool: 'pnpm vitest run packages/runtime',
+    // The hostile suite stays GREEN here, and that is the point: the structural guard turns the
+    // throw into a Result, so the invariant holds. What breaks is behaviour - loading the shipped
+    // pack now reports unexpected-error instead of succeeding. A crash became a legible failure
+    // with a named test pointing at it, which is exactly the trade ADR-0044 buys.
+    expect: /loads the shipped core-empty pack/,
+  },
+  {
     invariant: '1',
     breaks: 'forging a ContentId with a cast instead of parseContentId',
     edits: [
