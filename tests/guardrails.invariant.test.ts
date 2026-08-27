@@ -73,12 +73,68 @@ describe('invariant: lint rules survive into every config block', () => {
     expect(selectors).toContain(CONTENT_ID_SELECTOR);
   });
 
+  /**
+   * The same check for no-restricted-properties, added after the syntax-only version watched the
+   * bug happen again. A block introduced for the worker boundary matched `packages/**`, which
+   * includes `packages/sim/src/hot`, and silently switched off every allocating-method ban there.
+   * ADR-0021 named this failure mode; a guard covering one rule and not its neighbour did not stop
+   * it recurring four ADRs later.
+   */
+  const EXPECTED_PROPERTIES = [
+    ['packages/sim/src/hot/buffer-ops.ts', ['slice', 'map', 'filter', 'concat', 'localeCompare', 'random', 'postMessage']],
+    ['packages/runtime/src/loader.ts', ['localeCompare', 'random', 'getRandomValues', 'postMessage']],
+    ['packages/save/src/container.ts', ['localeCompare', 'random', 'postMessage']],
+  ] as const;
+
+  it.each(EXPECTED_PROPERTIES)('%s still restricts the properties it must', async (file, expected) => {
+    const eslint = new ESLint({ cwd: repoRoot });
+    const config = await eslint.calculateConfigForFile(path.join(repoRoot, file));
+
+    const entry = config.rules?.['no-restricted-properties'];
+    expect(entry, `${file} has no no-restricted-properties at all`).toBeDefined();
+
+    const restricted = (entry as unknown[])
+      .slice(1)
+      .map((option) => (option as { property?: string }).property);
+    for (const property of expected) expect(restricted, `${file} lost .${property}`).toContain(property);
+  });
+
   it('kernel/src/id.ts is the one place allowed to mint the brand', async () => {
     const eslint = new ESLint({ cwd: repoRoot });
     const config = await eslint.calculateConfigForFile(path.join(repoRoot, 'packages/kernel/src/id.ts'));
     const entry = config.rules?.['no-restricted-syntax'];
     const severity = Array.isArray(entry) ? entry[0] : entry;
     expect(severity).toBe(0);
+  });
+});
+
+describe('invariant: a file-level lint exemption does not become a laundering service', () => {
+  /**
+   * `packages/kernel/src/id.ts` is the one file where casting to `ContentId` is allowed, because
+   * `parseContentId` has to mint the brand somewhere. The exemption is per FILE, which means it is
+   * also the one file where anyone can add:
+   *
+   *     /** Fast path for ids already known to be well formed. *\/
+   *     export function unsafeContentId(raw: string): ContentId { return raw as ContentId; }
+   *
+   * Exported from kernel, that hands every other package a legal forgery, and it is the most
+   * natural bypass in the whole codebase because it is written exactly where the rules permit it.
+   * Freezing the export list is what makes adding it a decision rather than an edit.
+   *
+   * Same shape as the freeze on `packages/sim/src/determinism.ts`, which reaches globals by string
+   * key for reasons the lint cannot see either.
+   */
+  const FROZEN = [
+    ['packages/kernel/src/id.ts', ['ContentId', 'ID_SEPARATOR', 'IdError', 'IdErrorCode', 'RESERVED_NAMESPACE', 'contentIdNamespace', 'contentIdPath', 'isReservedNamespace', 'parseContentId']],
+    ['packages/sim/src/determinism.ts', ['NonDeterminismError', 'sealAmbientSources']],
+  ] as const;
+
+  it.each(FROZEN)('%s exports exactly what it is meant to', (file, expected) => {
+    const source = readFileSync(path.join(repoRoot, file), 'utf8');
+    const exported = [...source.matchAll(/^export (?:type|interface|const|function|class) (\w+)/gm)]
+      .map((match) => match[1]!)
+      .sort();
+    expect(exported).toEqual([...expected]);
   });
 });
 

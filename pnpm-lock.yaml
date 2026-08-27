@@ -17,6 +17,9 @@ importers:
       '@myfactorio/save':
         specifier: workspace:*
         version: link:packages/save
+      '@myfactorio/sim':
+        specifier: workspace:*
+        version: link:packages/sim
     devDependencies:
       '@eslint/js':
         specifier: ^10.0.1

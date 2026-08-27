@@ -594,3 +594,133 @@ this repository — and this one had a lifetime of exactly one run.
 **Worth noting.** Both defects failed in the safe direction: a case that cannot pass is visible,
 where a case that cannot fail is counted in the score. `verify-guardrails` case 2 was the dangerous
 form of the same mistake and survived two sessions.
+
+---
+
+## ADR-0034 — SimPort closes the worker channel instead of guarding it
+
+**Context.** `boundaryMessage` was a typed gate that nothing forced anyone through. The renderer
+held a raw `Worker`, and `worker.postMessage({ cmd: 'tick', payload: [1,2,3] })` compiled cleanly.
+`TransferSafe<T>` constrained only the code that mentioned it, so invariant 3 was type-level at
+exactly one call site that someone had chosen to write correctly.
+
+**Decision.** `attachSimPort(worker, shared)` takes the raw Worker, sends the buffer once, and
+returns a `SimPort` whose only channel is `send(payload: BoundaryPayload)`. A
+`no-restricted-properties` ban on `postMessage` everywhere except `packages/sim/src/port.ts` and the
+worker itself keeps the raw channel out of reach. `new Worker` stays at the call site because Vite
+only bundles a worker when it can see that exact shape — but the handle does not survive the line.
+
+**Rejected alternative.** Keeping the gate and documenting that people should use it. A type
+constrains the code that mentions it; a wall constrains the code that does not.
+
+**On invariant 4.** The parameter is a DOM `Worker`, a host object like `SharedArrayBuffer`, not a
+callback and not something a mod supplies. The guardrails test skips standard-library shapes for
+exactly this reason.
+
+---
+
+## ADR-0035 — Ambient non-determinism is sealed at runtime, not only linted
+
+**Context.** The lint banned `Math.random`, `Date.now`, `performance.now`, `new Date()` and
+`localeCompare`. All of these passed: `crypto.getRandomValues` (unlisted, and precisely where you go
+when `Math.random` is shut), `const M = Math; M.random()`, `globalThis.Math.random()`,
+`Math['random']()`, `const { random } = Math`. A guardrail names a mechanism; the invariant is wider
+than the mechanism, and the unlisted door is the one that gets used.
+
+**Decision.** `sealAmbientSources()` replaces the functions themselves with throwing stubs,
+non-writable and non-configurable, called first thing in the worker. Every alias, computed access
+and re-export resolves to the same function object, so there is no aliasing ceiling. The lint stays
+as a fast local signal and was widened (`crypto.*`, `process.hrtime`, `toLocale*`, and `new Intl.X()`
+with no locale).
+
+**Rejected alternative.** A longer blacklist. Nine bypasses were demonstrated against the previous
+one; the tenth was always going to exist.
+
+**And the message that taught the bug.** The old `localeCompare` text ended "or an `Intl.Collator`
+pinned to a fixed locale", and a reader in a hurry keeps the class and drops the word "pinned",
+landing back on the machine locale with the linter's approval. It now spells out
+`new Intl.Collator('en-US-u-kn')`, and an unpinned `Intl` constructor is itself banned.
+
+---
+
+## ADR-0036 — The hot path is measured, not only linted
+
+**Context.** "Hot" was a folder name, not a property of the code. Moving one object literal into a
+helper one directory up allocated once per call inside the inner loop and passed lint completely.
+So did `subarray`, `toSorted`, `structuredClone` and `+` string concatenation.
+
+**Decision.** `tests/hot-allocation.invariant.test.ts` runs the hot functions 50 000 times and
+asserts heap growth stays under 50 KB, against a negative control that must exceed 1 MB. Measured:
+8 KB of baseline noise, 110 KB when the delegated-allocation bypass is applied, in 280 ms.
+
+**Rejected alternative.** More lint rules. Lint cannot follow a call, which is the entire bypass.
+
+**Three broken instruments, all caught by the negative control.** Measuring `heapUsed` after a
+forced collection reports RETAINED memory, so a control allocating 6.5 million short-lived objects
+came back at minus forty bytes. Non-escaping object literals were deleted outright by V8's escape
+analysis — 25 KB for 6.5 million literals, which is worth knowing on its own since the lint bans a
+syntax whose cost the engine sometimes removes. And `PerformanceObserver` delivers on the microtask
+queue, so a synchronous loop yields zero entries. The first calibration then failed to catch the
+real bypass because sensitivity to a per-call allocation depends on call count, not grid size.
+Without a control that must fail, all four would have passed as a green test proving nothing.
+
+---
+
+## ADR-0037 — The ContentId brand is a speed bump, and says so
+
+**Context.** Six routes forged a `ContentId` past the cast ban. Two are now closed: the
+angle-bracket assertion `<ContentId>'sand'` is a different AST node and has its own selector, and
+adding `unsafeContentId` beside `parseContentId` — the most natural bypass in the codebase, written
+exactly where the rules allow it — is stopped by freezing that file's export list. One cannot be
+closed by any syntactic rule:
+
+    function brand<T>(raw: string): T { return raw as unknown as T; }
+    export const forged: ContentId = brand<ContentId>('sand');
+
+The cast names `T`. A local type alias is equally invisible.
+
+**Decision.** State the strength honestly. The brand stops the accidental cast; it does not stop
+intent. The guarantee is that every point where an id enters from outside — manifests, saves, IPC —
+parses it, and that set is small and enumerable. The root CLAUDE.md now says this rather than
+claiming ids can only be minted by `parseContentId`.
+
+**Rejected alternative.** Type-aware linting, which would catch the alias but not the generic, at
+the cost of the check budget. And leaving the claim as written, which is worse than a weaker claim:
+a guarantee believed to be absolute stops being verified.
+
+---
+
+## ADR-0038 — The effective-config guard covers every rule it shares a block with
+
+**Context.** ADR-0021 established that ESLint flat config replaces rule options rather than merging
+them, and added a test asserting the effective config still carried the shared `no-restricted-syntax`
+selectors. Four ADRs later, the block added for the worker boundary matched `packages/**`, which
+includes `packages/sim/src/hot`, and silently switched off every allocating-method ban there.
+`.slice()` in a hot function stopped being an error. The guard covered one rule and not its
+neighbour, so the named failure mode recurred with the guard in place.
+
+**Decision.** `no-restricted-properties` is composed from named arrays the same way, the hot-path
+block re-states all three sets, and the effective-config test now checks properties as well as
+syntax, per file.
+
+**Rejected alternative.** Remembering. This is the second occurrence of one mistake, and the first
+one already had a test.
+
+---
+
+## ADR-0039 — Verifier flags belong to the thing they describe
+
+**Context.** `verify-guardrails` cases carried a per-case `create: true` flag. A case that creates
+one file and modifies another therefore blanked the second, and reported MISS for a guardrail that
+worked perfectly — the delegated-allocation case, which is the one that matters most for ADR-0036.
+
+**Decision.** The flag is gone. Whether a file is being created is read from the filesystem, which
+is where that fact lives.
+
+**Rejected alternative.** Making it per-edit. It was never information the author needed to supply.
+
+**The pattern this closes.** Four verifier cases have now failed for reasons unrelated to their
+guardrail: a rule name that did not exist, an assertion on text the tool never prints (twice), and
+this. Each failed in the safe direction — a case that cannot pass is visible in the score. The
+dangerous form is the case that cannot fail, which is what `rule:` and the assert-on-test-name
+convention exist to prevent.

@@ -77,7 +77,6 @@ const CASES = [
     ],
     tool: 'pnpm arch',
     rule: 'packs-only-modding-api',
-    create: true,
   },
   {
     invariant: 'ADR-0027',
@@ -90,7 +89,6 @@ const CASES = [
     ],
     tool: 'pnpm arch',
     rule: 'no-import-below:kernel',
-    create: true,
   },
   {
     invariant: 'ADR-0027',
@@ -98,7 +96,6 @@ const CASES = [
     edits: [['packs/core-empty/src/probe.ts', () => 'export const broken: string = 42;\n']],
     tool: 'pnpm typecheck',
     expect: /not assignable to type 'string'/,
-    create: true,
   },
   {
     invariant: 'ADR-0026',
@@ -194,7 +191,7 @@ const CASES = [
       ],
     ],
     tool: 'pnpm lint',
-    expect: /localeCompare depends on the machine locale/,
+    expect: /localeCompare uses the machine locale/,
   },
   {
     invariant: '7',
@@ -216,16 +213,100 @@ const CASES = [
     expect: /duplicate|identical|expected/i,
   },
   {
-    invariant: '3',
-    breaks: 'posting a command object across the worker boundary instead of an index',
+    invariant: '3 / ADR-0034',
+    breaks: 'reaching past SimPort to the raw worker channel',
     edits: [
       [
         'apps/desktop/src/renderer/index.ts',
-        (s) => s.replace('boundaryMessage(1)', "boundaryMessage({ cmd: 'tick' })"),
+        (s) =>
+          s.replace(
+            'port.send(1);',
+            "(port as unknown as { postMessage: (p: unknown) => void }).postMessage({ cmd: 'tick' });",
+          ),
+      ],
+    ],
+    tool: 'pnpm lint',
+    expect: /boundary is closed, not guarded/,
+  },
+  {
+    invariant: '5 / ADR-0036',
+    breaks: 'delegating the allocation to a helper one directory above hot/',
+    edits: [
+      [
+        'packages/sim/src/scratch.ts',
+        () => 'export function pair(a: number, b: number): { a: number; b: number } {\n  return { a, b };\n}\n',
+      ],
+      [
+        'packages/sim/src/hot/buffer-ops.ts',
+        (s) =>
+          s
+            .replace('export const NOT_FOUND = -1;', "import { pair } from '../scratch.js';\n\nexport const NOT_FOUND = -1;")
+            .replace('  let total = 0;', '  let total = pair(0, cells.length).a;'),
+      ],
+    ],
+    // Lint cannot follow a call. The heap measurement can, which is the whole point of ADR-0036.
+    tool: 'pnpm vitest run tests/hot-allocation',
+    expect: /allocates nothing/,
+  },
+  {
+    invariant: '7 / ADR-0035',
+    breaks: 'reaching randomness through crypto, where Math.random is shut',
+    edits: [
+      [
+        'packages/sim/src/world.ts',
+        (s) => s.replace('  return CTRL_BYTES +', '  void crypto.getRandomValues(new Uint32Array(1));\n  return CTRL_BYTES +'),
+      ],
+    ],
+    tool: 'pnpm lint',
+    expect: /crypto\.getRandomValues breaks determinism/,
+  },
+  {
+    invariant: '7 / ADR-0035',
+    breaks: 'an Intl.Collator with no locale - the fix the old lint message recommended',
+    edits: [
+      [
+        'packages/runtime/src/loader.ts',
+        (s) => s.replace('.sort(compareCodeUnits));', '.sort(new Intl.Collator().compare));'),
+      ],
+    ],
+    tool: 'pnpm lint',
+    expect: /no locale uses the machine locale/,
+  },
+  {
+    invariant: '1 / ADR-0037',
+    breaks: 'forging a ContentId with an angle-bracket assertion instead of `as`',
+    edits: [
+      ['packages/save/src/index.ts', (s) => `${s}\nexport const forged = <ContentId>'sand';\n`],
+    ],
+    tool: 'pnpm lint',
+    expect: /speed bump/,
+  },
+  {
+    invariant: '1 / ADR-0037',
+    breaks: 'adding unsafeContentId beside parseContentId, where the lint is off',
+    edits: [
+      [
+        'packages/kernel/src/id.ts',
+        (s) => `${s}\nexport function unsafeContentId(raw: string): ContentId {\n  return raw as ContentId;\n}\n`,
+      ],
+    ],
+    tool: 'pnpm vitest run tests/guardrails',
+    expect: /laundering service|exports exactly what it is meant to/,
+  },
+  {
+    invariant: '3',
+    breaks: 'sending a command object through SimPort instead of an index',
+    edits: [
+      [
+        'apps/desktop/src/renderer/index.ts',
+        (s) => s.replace('port.send(1);', "port.send({ cmd: 'tick' });"),
       ],
     ],
     tool: 'pnpm typecheck',
-    expect: /not assignable to parameter of type 'never'/,
+    // TypeScript checks the literal against each member of BoundaryPayload and reports TS2353
+    // against SharedArrayBuffer rather than naming the union, so asserting on the union name
+    // matched nothing while the type was refusing exactly as intended.
+    expect: /renderer[\\/]index\.ts.*error TS(2353|2345)/,
   },
   {
     invariant: '4',
@@ -414,9 +495,12 @@ for (const testCase of CASES) {
     for (const [file, transform] of testCase.edits) {
       const full = path.join(worktree, file);
       mkdirSync(path.dirname(full), { recursive: true });
+      // Whether a file is being created is a property of the FILE, not of the case. It used to be a
+      // per-case `create: true` flag, so a case that created one file and modified another blanked
+      // the second one - and then reported MISS for a guardrail that works perfectly.
       const existed = existsSync(full);
-      originals.set(full, existed ? readFileSync(full, 'utf8') : null);
-      const before = testCase.create || !existed ? '' : readFileSync(full, 'utf8');
+      const before = existed ? readFileSync(full, 'utf8') : '';
+      originals.set(full, existed ? before : null);
       writeFileSync(full, transform(before), 'utf8');
     }
 

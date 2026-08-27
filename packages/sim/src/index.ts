@@ -18,6 +18,9 @@ export {
   STATUS_STOPPING,
 } from './boundary.js';
 
+export { type SimPort, attachSimPort } from './port.js';
+export { NonDeterminismError, sealAmbientSources } from './determinism.js';
+
 export {
   type DataOnly,
   type World,

@@ -12,18 +12,21 @@ Vocabulary shared by two packages is a third package, never a subpath of one of 
 
 ## Invariants — mechanically enforced, never merely documented
 
-1. Every content id is namespaced (`core:x`, `mymod:x`). `ContentId` is branded and minted only
-   by `parseContentId`. Casting to it is a lint error outside `packages/kernel/src/id.ts`.
+1. Every content id is namespaced (`core:x`, `mymod:x`) and parsed at every point where one enters
+   from outside. `ContentId` is branded and the cast ban is a speed bump, not a wall: a generic
+   laundering helper defeats any syntactic rule (ADR-0037). The parsing is the guarantee.
 2. Saves never serialise runtime numeric ids: palette of qualified names, remapped on load.
    Versioned container with a migration chain. `save` may not import `isa` (`save-no-isa`):
    no bytecode is ever persisted. Referencing content — palette, `packs[]` — is legitimate.
-3. Nothing crosses the worker boundary but indices and shared buffers (`TransferSafe`).
+3. Nothing crosses the worker boundary but indices and the shared buffer. `SimPort` is the only
+   channel: raw `postMessage` is lint-banned everywhere else, so the channel is shut, not guarded.
 4. No `sim` API accepts a function. A mod supplies data only (`DataOnly`).
-5. No allocation inside function bodies in `packages/sim/src/hot/`. Module-level constants are
-   allowed. `eslint-disable` is inert there (`noInlineConfig`).
+5. No allocation in the hot path. Lint covers the syntax in `packages/sim/src/hot/` (module
+   constants allowed, `eslint-disable` inert); the heap measurement covers the call chain.
 6. Base content has no privilege: `core-empty` loads through the same loader as any mod.
-7. Determinism: sorted scan, topological tie-break by `ContentId`. No `Math.random`, `Date.now`,
-   `performance.now`, `new Date()` or `localeCompare` in `sim` or `runtime`.
+7. Determinism: sorted scan, topological tie-break by `ContentId`. Ambient sources are lint-banned
+   across `packages/` and, in the worker, sealed at runtime by `sealAmbientSources()` — which is
+   what beats `const M = Math`.
 
 ## Rules about the rules
 

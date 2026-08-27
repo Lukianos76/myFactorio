@@ -9,6 +9,11 @@
  * contract can be observed rather than argued about.
  */
 import { type BoundaryPayload, CTRL, STATUS_BOOTING, STATUS_READY } from '../boundary.js';
+import { sealAmbientSources } from '../determinism.js';
+
+// First, before any simulation code can run or any mod-supplied data is touched. From here on
+// Math.random, Date.now, performance.now and crypto.getRandomValues throw, however they are reached.
+sealAmbientSources();
 
 interface WorkerScope {
   onmessage: ((event: { readonly data: BoundaryPayload }) => void) | null;

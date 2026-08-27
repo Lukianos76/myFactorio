@@ -1,9 +1,4 @@
-import {
-  CTRL,
-  STATUS_READY,
-  boundaryMessage,
-  worldByteLength,
-} from '@myfactorio/sim';
+import { CTRL, STATUS_READY, attachSimPort, worldByteLength } from '@myfactorio/sim';
 
 /**
  * There is no rendering in this session. What the renderer does is show the load status and start
@@ -53,12 +48,16 @@ if (!crossOriginIsolated) {
 } else {
   const spec = { width: 256, height: 256 };
   const shared = new SharedArrayBuffer(worldByteLength(spec));
-  const control = new Int32Array(shared, 0, 4);
 
-  const worker = new Worker(new URL('./sim.worker.ts', import.meta.url), { type: 'module' });
-
-  // The one and only structured payload that crosses. Everything after this is an integer.
-  worker.postMessage(boundaryMessage(shared));
+  // `new Worker` stays here because Vite only bundles a worker when it can see this exact shape.
+  // The handle does not survive the next line: attachSimPort takes it, sends the buffer once, and
+  // hands back a SimPort whose only channel is send(BoundaryPayload). From here on there is no raw
+  // postMessage in reach - the lint rule makes sure of it.
+  const port = attachSimPort(
+    new Worker(new URL('./sim.worker.ts', import.meta.url), { type: 'module' }),
+    shared,
+  );
+  const control = port.control;
 
   await Atomics.waitAsync(control, CTRL.STATUS, 0).value;
   const ready = Atomics.load(control, CTRL.STATUS) === STATUS_READY;
@@ -67,7 +66,7 @@ if (!crossOriginIsolated) {
   // Waiting for the worker to bump the heartbeat slot is what turns that from a compile-time
   // constraint into something observed at runtime.
   const beforeBeat = Atomics.load(control, CTRL.HEARTBEAT);
-  worker.postMessage(boundaryMessage(1));
+  port.send(1);
   await Atomics.waitAsync(control, CTRL.HEARTBEAT, beforeBeat, 5000).value;
   const beat = Atomics.load(control, CTRL.HEARTBEAT);
 
