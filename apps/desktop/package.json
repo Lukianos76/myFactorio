@@ -1,0 +1,22 @@
+{
+  "name": "@myfactorio/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Electron shell. Hosts the pack loader and the (empty) simulation worker.",
+  "main": "out/main/index.js",
+  "scripts": {
+    "build": "electron-vite build",
+    "start": "electron-vite preview"
+  },
+  "dependencies": {
+    "@myfactorio/kernel": "workspace:*",
+    "@myfactorio/runtime": "workspace:*",
+    "@myfactorio/sim": "workspace:*"
+  },
+  "devDependencies": {
+    "electron": "^44.0.0",
+    "electron-vite": "^5.0.0",
+    "vite": "^8.2.2"
+  }
+}

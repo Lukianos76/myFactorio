@@ -1,0 +1,18 @@
+{
+  "name": "@myfactorio/modding-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Public surface re-exported for mod authors. Types and validators only.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@myfactorio/kernel": "workspace:*",
+    "@myfactorio/rules-schema": "workspace:*",
+    "@myfactorio/runtime": "workspace:*"
+  }
+}

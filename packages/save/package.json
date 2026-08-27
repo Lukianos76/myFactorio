@@ -1,0 +1,16 @@
+{
+  "name": "@myfactorio/save",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Name palette, versioned container, migration chain.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@myfactorio/kernel": "workspace:*"
+  }
+}

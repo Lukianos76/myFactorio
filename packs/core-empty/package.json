@@ -1,0 +1,10 @@
+{
+  "name": "@myfactorio/pack-core-empty",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Base content pack. Empty on purpose: it loads through the exact same path as any mod.",
+  "devDependencies": {
+    "@myfactorio/modding-api": "workspace:*"
+  }
+}

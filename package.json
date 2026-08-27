@@ -1,0 +1,30 @@
+{
+  "name": "myfactorio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit --pretty false",
+    "lint": "eslint .",
+    "arch": "depcruise packages apps packs tools tests --config .dependency-cruiser.cjs",
+    "gen": "node tools/gen-json-schema.mjs",
+    "gen:verify": "node tools/gen-json-schema.mjs --verify",
+    "test": "vitest run",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run arch && pnpm run gen:verify && pnpm run test",
+    "check:full": "pnpm run check",
+    "e2e:no-core": "node tools/e2e-no-core.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.3.0",
+    "dependency-cruiser": "^17.4.3",
+    "eslint": "^9.39.5",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.68.0",
+    "vitest": "^3.2.7"
+  }
+}

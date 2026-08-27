@@ -1,0 +1,20 @@
+{
+  "name": "@myfactorio/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Content pack loader, manifest validation, deterministic dependency resolution.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@myfactorio/kernel": "workspace:*",
+    "@myfactorio/rules-schema": "workspace:*",
+    "@myfactorio/isa": "workspace:*",
+    "@myfactorio/rules-compiler": "workspace:*",
+    "@myfactorio/save": "workspace:*"
+  }
+}

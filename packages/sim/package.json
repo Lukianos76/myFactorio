@@ -1,0 +1,17 @@
+{
+  "name": "@myfactorio/sim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Simulation VM over typed arrays. Worker-bound, data-only API.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@myfactorio/kernel": "workspace:*",
+    "@myfactorio/isa": "workspace:*"
+  }
+}

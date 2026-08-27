@@ -1,0 +1,13 @@
+{
+  "name": "@myfactorio/kernel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ID registry, event bus, scheduler. Zero dependencies.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  }
+}
