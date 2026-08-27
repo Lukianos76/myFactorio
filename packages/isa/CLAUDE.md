@@ -14,4 +14,6 @@
   compiled program in a `.fsav` to save startup time would silently create a second versioned
   format and freeze this ISA forever.
 - Grow into a compiler. Vocabulary only. The moment this package knows how to build a program from
-  rules, `sim` inherits the compiler.
+  rules, `sim` inherits the compiler. Note that extracting this package removed the *need* for
+  `sim` to reach `rules-compiler`, but the ranks still permit that edge — `sim-no-compiler` is what
+  actually closes it (ADR-0020).

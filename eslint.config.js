@@ -63,6 +63,24 @@ const ambientSourceSyntax = [
   { selector: "NewExpression[callee.name='Date']", message: 'new Date() breaks determinism. Time must be a tick count passed in as data.' },
 ];
 
+/**
+ * Selectors that must survive into EVERY block.
+ *
+ * Flat config REPLACES a rule's options rather than merging them, so a later block that sets
+ * no-restricted-syntax for its own reasons silently drops everything an earlier block put there.
+ * That is exactly how the ContentId ban went dead across all of packages/ while still reading as
+ * enabled at the top of this file. Every use of no-restricted-syntax below spreads this array, and
+ * tests/guardrails.invariant.test.ts asserts the effective config still contains it.
+ */
+const alwaysSyntax = [
+  {
+    selector: "TSAsExpression > TSTypeReference > Identifier[name='ContentId']",
+    message:
+      'ContentId is a branded type. It may only be minted by parseContentId in ' +
+      'packages/kernel/src/id.ts. Casting defeats invariant 1.',
+  },
+];
+
 export default tseslint.config(
   {
     ignores: ['**/node_modules/**', '**/dist/**', '**/out/**', 'tests/fixtures/**', '**/*.generated.*'],
@@ -79,18 +97,8 @@ export default tseslint.config(
       // rule would be worked around case by case, which is worse than deciding it once here.
       // See ADR-0019.
       '@typescript-eslint/no-non-null-assertion': 'off',
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector: "TSAsExpression > TSTypeReference > Identifier[name='ContentId']",
-          message: 'ContentId is a branded type. It may only be minted by parseContentId in packages/kernel/src/id.ts. Casting defeats invariant 1.',
-        },
-      ],
+      'no-restricted-syntax': ['error', ...alwaysSyntax],
     },
-  },
-  {
-    files: ['packages/kernel/src/id.ts'],
-    rules: { 'no-restricted-syntax': 'off' },
   },
   {
     // Every package, not just sim and runtime. compareCodeUnits lives in kernel, so a localeCompare
@@ -100,7 +108,7 @@ export default tseslint.config(
     files: ['packages/**/*.ts'],
     rules: {
       'no-restricted-properties': ['error', ...ambientSourceProperties],
-      'no-restricted-syntax': ['error', ...ambientSourceSyntax],
+      'no-restricted-syntax': ['error', ...alwaysSyntax, ...ambientSourceSyntax],
     },
   },
   {
@@ -120,7 +128,7 @@ export default tseslint.config(
     files: ['packages/sim/src/hot/**/*.ts'],
     linterOptions: { noInlineConfig: true, reportUnusedDisableDirectives: 'error' },
     rules: {
-      'no-restricted-syntax': ['error', ...hotPathSyntax, ...ambientSourceSyntax],
+      'no-restricted-syntax': ['error', ...alwaysSyntax, ...hotPathSyntax, ...ambientSourceSyntax],
       'no-restricted-properties': ['error', ...hotPathProperties, ...ambientSourceProperties],
     },
   },
@@ -136,6 +144,14 @@ export default tseslint.config(
       sourceType: 'commonjs',
       globals: { module: 'writable', require: 'readonly', __dirname: 'readonly' },
     },
+  },
+  {
+    // LAST on purpose. Flat config applies blocks in order and the later one wins, so this
+    // exemption has to sit after every block that sets no-restricted-syntax - otherwise the
+    // packages/** block re-enables the ban here and parseContentId, the one function allowed to
+    // mint the brand, cannot compile past lint. Position is semantics in this file.
+    files: ['packages/kernel/src/id.ts'],
+    rules: { 'no-restricted-syntax': 'off' },
   },
   {
     files: ['**/*.test.ts', 'tests/**/*.ts'],

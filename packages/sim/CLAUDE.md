@@ -19,3 +19,7 @@
   `eslint.config.js` is wrong and gets fixed there.
 - Touch the DOM, Node builtins, Electron, or any ambient clock or randomness. When randomness is
   finally needed, it comes from a seeded PRNG carried in simulation state.
+- Import `rules-compiler` (`sim-no-compiler`). Note carefully: the layer ranks do **not** forbid
+  this — `rules-compiler` sits above `sim`, so the generated rules never fire on that edge.
+  Extracting `packages/isa` removed the *need* to reach the compiler, not the *possibility*. The
+  explicit rule is what keeps the compiler out of the worker bundle. See ADR-0020.

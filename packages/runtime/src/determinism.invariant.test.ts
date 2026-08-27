@@ -84,6 +84,37 @@ describe('invariant: loading is deterministic regardless of directory enumeratio
     }
   });
 
+  /**
+   * What the loader's pre-sort actually protects.
+   *
+   * The topological sort tie-breaks by id, so load order is already a pure function of the graph
+   * even with an unsorted input. The pre-sort matters for what happens BEFORE the graph exists:
+   * which of two conflicting packs is reported as the incumbent. Without it, two players with the
+   * same broken mod set get different error messages, and a bug report becomes unreproducible.
+   */
+  it('reports the same duplicate-namespace conflict regardless of enumeration order', async () => {
+    const packsDir = await mkdtemp(path.join(tmpdir(), 'myfactorio-duplicate-'));
+    dirs.push(packsDir);
+    for (const dirName of ['a_first', 'z_last']) {
+      const dir = path.join(packsDir, dirName);
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        path.join(dir, 'pack.json'),
+        JSON.stringify({ id: 'contested', name: dirName, version: '1.0.0', rules: [] }),
+      );
+    }
+
+    const forward = await loadPacks({ packsDir, entries: ['a_first', 'z_last'] });
+    const backward = await loadPacks({ packsDir, entries: ['z_last', 'a_first'] });
+
+    expect(forward.ok).toBe(false);
+    expect(backward.ok).toBe(false);
+    if (forward.ok || backward.ok) return;
+
+    expect(forward.error.code).toBe('duplicate-namespace');
+    expect(backward.error.message).toBe(forward.error.message);
+  });
+
   it('detects a dependency cycle instead of resolving it arbitrarily', async () => {
     const packsDir = await mkdtemp(path.join(tmpdir(), 'myfactorio-cycle-'));
     dirs.push(packsDir);

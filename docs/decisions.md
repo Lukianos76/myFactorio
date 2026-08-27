@@ -309,3 +309,59 @@ here, is honest; letting it be worked around case by case is not.
 
 **What still holds the line.** `noUncheckedIndexedAccess` itself stays on, so the compiler still
 forces the author to look at every indexed read and say what they mean.
+
+---
+
+## ADR-0020 — `sim-no-compiler`, correcting a claim in ADR-0005
+
+**Context.** ADR-0005 stated that extracting `packages/isa` meant "there is no path from `sim` to
+`rules-compiler` at all". The break-a-rule verification pass showed that to be false: importing the
+compiler from `sim` produced no violation. `rules-compiler` is rank 3 and `sim` is rank 4, so that
+edge runs *upward* through the layering and the generated rules never look at it.
+
+**Decision.** An explicit `sim-no-compiler` rule, in the same spirit as `save-no-isa`. Extracting
+`isa` removed sim's *need* to reach the compiler; only this rule removes the *possibility*.
+
+**Rejected alternative.** Reordering the ranks to put `rules-compiler` below `sim`. That would make
+the edge illegal for free, but it inverts a dependency direction that is correct on its own terms —
+the compiler is upstream of the simulation — purely to get a side effect out of the layer rules.
+Encoding one constraint by distorting another is how a layering stops meaning anything.
+
+**What this says about the method.** The claim in ADR-0005 was plausible, written down, and wrong,
+and it survived review because nobody had watched the rule fire. That is the entire argument for
+`tools/verify-guardrails.mjs`.
+
+---
+
+## ADR-0021 — Shared lint selectors are composed explicitly
+
+**Context.** ESLint flat config REPLACES a rule's options rather than merging them. The `ContentId`
+cast ban was declared once in the base block and then silently discarded for every file under
+`packages/` by a later block that set `no-restricted-syntax` for determinism. It read as enabled
+and applied nowhere that mattered. Nothing warned.
+
+**Decision.** An `alwaysSyntax` array spread into every `no-restricted-syntax` in the config, plus a
+test that asserts the **effective** config for representative files still contains the selector.
+Block order is now semantically load-bearing and commented as such: the `kernel/src/id.ts`
+exemption must come last, or the ban re-enables on the one function permitted to mint the brand.
+
+**Rejected alternative.** Trusting the config to be read the way it looks. A rule that is present in
+the source and absent from the effective config is worse than an absent rule, because it is
+reassuring.
+
+---
+
+## ADR-0022 — What the loader pre-sort actually protects
+
+**Context.** ADR-0011 presented the sorted scan as the mechanism carrying deterministic handle
+assignment. The verification pass showed the determinism test still passes with that sort removed.
+
+**Decision.** Keep the pre-sort, and be accurate about its role. Deterministic load order is carried
+by the tie-break inside `stableTopologicalSort`, whose output is a pure function of the graph
+regardless of input order. The pre-sort governs what happens *before* the graph exists — chiefly
+which of two conflicting packs is reported as the incumbent — and now has its own test asserting
+that a duplicate-namespace conflict reports identically whatever the enumeration order.
+
+**Rejected alternative.** Removing the pre-sort as redundant. Two players with the same broken mod
+set would get different error messages, and a bug report stops being reproducible. It is cheap
+defence in depth; it just is not what ADR-0011 implied it was.

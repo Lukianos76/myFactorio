@@ -120,7 +120,19 @@ const CASES = [
   },
   {
     invariant: '7',
-    breaks: 'dropping the sort before the topological tie-break',
+    breaks: 'dropping the topological tie-break, so ties fall back to insertion order',
+    edits: [
+      [
+        'packages/kernel/src/order.ts',
+        (s) => s.replace('    ready.sort(compareCodeUnits);', '    // tie-break removed'),
+      ],
+    ],
+    tool: 'pnpm vitest run packages/runtime',
+    expect: /determinism|identical|expected/i,
+  },
+  {
+    invariant: '7',
+    breaks: 'dropping the loader pre-sort, which decides which duplicate is reported first',
     edits: [
       [
         'packages/runtime/src/loader.ts',
@@ -128,7 +140,7 @@ const CASES = [
       ],
     ],
     tool: 'pnpm vitest run packages/runtime',
-    expect: /determinism|identical/i,
+    expect: /duplicate|identical|expected/i,
   },
   {
     invariant: '3',

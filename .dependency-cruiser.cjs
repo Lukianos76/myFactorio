@@ -54,6 +54,18 @@ module.exports = {
       to: { path: pkg('isa') },
     },
     {
+      name: 'sim-no-compiler',
+      severity: 'error',
+      comment:
+        'packages/sim must not import packages/rules-compiler, even though the ranks allow it ' +
+        '(rules-compiler sits ABOVE sim, so the layer rules never fire on this edge). Extracting ' +
+        'packages/isa removed the NEED for sim to reach the compiler; it did not remove the ' +
+        'possibility. Without this rule, one careless import drags the whole compiler into the ' +
+        'worker bundle. See ADR-0020.',
+      from: { path: pkg('sim') },
+      to: { path: pkg('rules-compiler') },
+    },
+    {
       name: 'packs-only-modding-api',
       severity: 'error',
       comment:

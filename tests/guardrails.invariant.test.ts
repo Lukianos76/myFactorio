@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import ts from 'typescript';
+import { ESLint } from 'eslint';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -35,6 +36,49 @@ describe('invariant: the root CLAUDE.md does not dilute', () => {
       expect(content, `${name}/CLAUDE.md`).toContain('## Owns');
       expect(content, `${name}/CLAUDE.md`).toContain('## Must never');
     }
+  });
+});
+
+describe('invariant: lint rules survive into every config block', () => {
+  /**
+   * Flat config REPLACES a rule's options instead of merging them, so a later block that sets
+   * no-restricted-syntax for its own purposes silently discards whatever an earlier block put
+   * there. That is not hypothetical: the ContentId cast ban read as enabled at the top of
+   * eslint.config.js while being dead in every single package, because the determinism block
+   * overwrote it. Nothing failed, nothing warned - it simply stopped applying.
+   *
+   * This asserts the EFFECTIVE config, file by file, rather than trusting the source to be read
+   * the way it looks.
+   */
+  const CONTENT_ID_SELECTOR = "TSAsExpression > TSTypeReference > Identifier[name='ContentId']";
+
+  const SAMPLES = [
+    'packages/save/src/index.ts',
+    'packages/runtime/src/loader.ts',
+    'packages/sim/src/world.ts',
+    'packages/sim/src/hot/buffer-ops.ts',
+    'apps/desktop/src/main/index.ts',
+  ];
+
+  it.each(SAMPLES)('%s still forbids casting to ContentId', async (file) => {
+    const eslint = new ESLint({ cwd: repoRoot });
+    const config = await eslint.calculateConfigForFile(path.join(repoRoot, file));
+
+    const entry = config.rules?.['no-restricted-syntax'];
+    expect(entry, `${file} has no no-restricted-syntax at all`).toBeDefined();
+
+    const selectors = (entry as unknown[])
+      .slice(1)
+      .map((option) => (option as { selector?: string }).selector);
+    expect(selectors).toContain(CONTENT_ID_SELECTOR);
+  });
+
+  it('kernel/src/id.ts is the one place allowed to mint the brand', async () => {
+    const eslint = new ESLint({ cwd: repoRoot });
+    const config = await eslint.calculateConfigForFile(path.join(repoRoot, 'packages/kernel/src/id.ts'));
+    const entry = config.rules?.['no-restricted-syntax'];
+    const severity = Array.isArray(entry) ? entry[0] : entry;
+    expect(severity).toBe(0);
   });
 });
 
