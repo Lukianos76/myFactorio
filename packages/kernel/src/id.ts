@@ -14,9 +14,6 @@ export type ContentId = string & { readonly [contentIdBrand]: 'ContentId' };
 
 export const ID_SEPARATOR = ':';
 
-/** Reserved for the base content pack. Which pack may claim it is the host's call, not ours. */
-export const RESERVED_NAMESPACE = 'core';
-
 /**
  * The grammar, as source strings so `rules-schema` can publish exactly this and not a copy.
  *
@@ -115,6 +112,13 @@ export function contentIdPath(id: ContentId): string {
   return id.slice(id.indexOf(ID_SEPARATOR) + 1);
 }
 
-export function isReservedNamespace(namespace: string): boolean {
-  return namespace === RESERVED_NAMESPACE;
-}
+/*
+ * There is deliberately no reserved namespace here.
+ *
+ * `core` used to be reserved, and the authorisation token was a directory NAME: a third-party pack
+ * dropped into a folder called `core-empty` got it. The invariant held and the mechanism was
+ * hollow. Since base content has no privilege, the honest resolution is that it has no namespace
+ * privilege either — `core` is an ordinary namespace, and a collision is caught by the ordinary
+ * duplicate check, which names both directories and is therefore a better message than the special
+ * one it replaces. See ADR-0046.
+ */

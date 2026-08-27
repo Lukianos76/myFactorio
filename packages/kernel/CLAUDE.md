@@ -15,5 +15,7 @@
   everywhere except `src/id.ts`.
 - Reach for an ambient source of truth: no `Math.random`, `Date.now`, `performance.now`,
   `new Date()`, `localeCompare`. `compareCodeUnits` lives here precisely so nobody needs them.
-- Decide which pack owns the reserved namespace. It reports that a namespace *is* reserved; who
-  may claim it is the host's call.
+- Reserve a namespace for anyone. `core` used to be reserved, and the authorisation token was a
+  directory NAME — so the privilege went to whoever created that folder. Base content has no
+  privilege, so it has no namespace privilege either; a collision is the loader's ordinary
+  duplicate check, which names both directories (ADR-0046).

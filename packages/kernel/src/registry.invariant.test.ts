@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseContentId, contentIdNamespace, contentIdPath, isReservedNamespace } from './id.js';
+import { parseContentId, contentIdNamespace, contentIdPath } from './id.js';
 import { Registry } from './registry.js';
 
 describe('invariant: every content id is namespaced', () => {
@@ -36,11 +36,6 @@ describe('invariant: every content id is namespaced', () => {
     if (!result.ok) return;
     expect(contentIdNamespace(result.value)).toBe('my_mod');
     expect(contentIdPath(result.value)).toBe('ore/iron');
-  });
-
-  it('reserves the core namespace', () => {
-    expect(isReservedNamespace('core')).toBe(true);
-    expect(isReservedNamespace('my_mod')).toBe(false);
   });
 
   it('a raw string is not assignable to ContentId', () => {

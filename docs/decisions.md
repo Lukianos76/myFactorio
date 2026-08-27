@@ -840,3 +840,33 @@ path and the underlying error.
 
 **Rejected alternative.** Catching broadly for robustness. Turning a diagnosable failure into an
 absence is not robustness; it is the loss of the only information anyone had.
+
+---
+
+## ADR-0046 — There is no reserved namespace, superseding ADR-0009
+
+**Context.** ADR-0009 reserved `core` for base content, and ADR-0015 handed the question of *who may
+claim it* to the host through `reservedNamespaceOwner`. The authorisation token was a directory
+NAME. Measured during review: a third-party pack dropped into a folder called `core-empty` was given
+the reserved namespace and registered `core:sand` without complaint. Invariant 6 held — the loader
+genuinely had no branch for the base pack — while the mechanism guarding the reservation had no
+substance at all.
+
+**Decision.** The reservation is removed. `RESERVED_NAMESPACE`, `isReservedNamespace`,
+`reservedNamespaceOwner` and the `reserved-namespace` error code are gone. `core` is an ordinary
+namespace; the shipped pack claims it the way any mod claims its own, and `loadPacks` now takes one
+argument. This supersedes the reservation clause of ADR-0009; everything else in that entry stands.
+
+**Rejected alternative.** Giving the token substance — a signature, a manifest hash pinned in the
+shell. That is real work to protect a privilege we had already decided base content should not have.
+Invariant 6 says the base pack goes through the mod loader; a namespace only it may use is the same
+privilege wearing a different hat.
+
+**What replaces it.** Nothing, which is the point: two packs claiming one namespace is caught by the
+duplicate check that was already there, and its message is better than the one it replaces because
+it names both directories instead of announcing a rule. A guarantee that comes from the absence of a
+mechanism cannot be circumvented by finding the mechanism's edge.
+
+**Kept as convention.** `core` still belongs to the shipped pack by convention, and a mod author who
+takes it gets a load-time collision naming both packs. Convention plus a good error message, stated
+as such, rather than enforcement that only looked like enforcement.

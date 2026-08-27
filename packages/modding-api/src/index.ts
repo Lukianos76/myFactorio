@@ -15,11 +15,9 @@ export {
   type IdErrorCode,
   type Result,
   ID_SEPARATOR,
-  RESERVED_NAMESPACE,
   parseContentId,
   contentIdNamespace,
   contentIdPath,
-  isReservedNamespace,
 } from '@myfactorio/kernel';
 
 export {

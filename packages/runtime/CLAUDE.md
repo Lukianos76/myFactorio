@@ -8,8 +8,8 @@
 ## Must never
 
 - Branch on which pack is the base one (invariant 6). The shipped content pack is discovered,
-  validated and ordered exactly like a third-party mod. The host names which directory may claim
-  the reserved namespace; this package holds no opinion about it.
+  validated and ordered exactly like a third-party mod, and `loadPacks` takes no argument naming a
+  privileged one — there is no privilege to name (ADR-0046).
 - Throw. Every failure is a `Result`, because the shell has to open a window and show the message
   rather than die before it draws anything.
 - Depend on enumeration order. Entries are sorted before anything else, and the topological sort

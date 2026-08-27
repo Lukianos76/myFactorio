@@ -8,7 +8,6 @@ import {
   err,
   compareCodeUnits,
   contentIdNamespace,
-  isReservedNamespace,
   parseContentId,
   stableTopologicalSort,
 } from '@myfactorio/kernel';
@@ -19,9 +18,9 @@ import { type PackManifest, formatIssues, packManifestSchema } from '@myfactorio
  * The one and only path by which content enters the game.
  *
  * There is no branch in this file for "the base pack". The shipped content pack is discovered,
- * validated, ordered and registered exactly like a third-party mod; the host merely names which
- * directory is allowed to claim the reserved namespace. That is what invariant 6 means, and
- * loader.invariant.test.ts proves it by pointing this function at an empty directory.
+ * validated, ordered and registered exactly like a third-party mod, and loadPacks takes no
+ * argument naming a privileged one. That is what invariant 6 means, and loader.invariant.test.ts
+ * proves it by pointing this function at an empty directory.
  *
  * Nothing here throws. The shell has to be able to open a window and show a readable message.
  */
@@ -35,8 +34,6 @@ export interface LoadOptions {
    * stand in for the filesystem returning entries in a different order on a different machine.
    */
   readonly entries?: readonly string[];
-  /** Directory name permitted to declare the reserved namespace. Nobody may, if unset. */
-  readonly reservedNamespaceOwner?: string;
 }
 
 export interface LoadedPack {
@@ -58,7 +55,6 @@ export type LoadErrorCode =
   | 'packs-dir-missing'
   | 'no-packs-found'
   | 'invalid-manifest'
-  | 'reserved-namespace'
   | 'duplicate-namespace'
   | 'namespace-mismatch'
   | 'missing-dependency'
@@ -229,20 +225,17 @@ async function loadPacksOrThrow(options: LoadOptions): Promise<Result<LoadedPack
   for (const pack of discovered) {
     const namespace = pack.manifest.id;
 
-    if (isReservedNamespace(namespace) && pack.dirName !== options.reservedNamespaceOwner) {
-      return err({
-        code: 'reserved-namespace',
-        message:
-          `Pack in ${pack.dir} declares the reserved namespace ${JSON.stringify(namespace)}. ` +
-          'Choose a namespace of your own; it is what keeps your content from colliding with everyone else\'s.',
-      });
-    }
-
+    // No special case for the base pack's namespace. `core` used to be reserved and the token was a
+    // directory name, so a third-party pack in a folder called `core-empty` simply got it. A
+    // collision is now caught here like any other, and this message is better than the one it
+    // replaces because it names both directories. See ADR-0046.
     const existing = byNamespace.get(namespace);
     if (existing !== undefined) {
       return err({
         code: 'duplicate-namespace',
-        message: `Namespace ${JSON.stringify(namespace)} is claimed by both ${existing.dir} and ${pack.dir}.`,
+        message:
+          `Namespace ${JSON.stringify(namespace)} is claimed by both ${existing.dir} and ${pack.dir}. ` +
+          'Each pack needs a namespace of its own; that is what keeps content from colliding.',
       });
     }
     byNamespace.set(namespace, pack);

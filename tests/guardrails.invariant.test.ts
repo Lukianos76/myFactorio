@@ -136,16 +136,14 @@ describe('invariant: a file-level lint exemption does not become a laundering se
         'NAMESPACE_SOURCE',
         'PATH_SEGMENT_SOURCE',
         'PATH_SOURCE',
-        // The type, the separator, the reserved namespace, the errors.
+        // The type, the separator, the errors.
         'ContentId',
         'ID_SEPARATOR',
         'IdError',
         'IdErrorCode',
-        'RESERVED_NAMESPACE',
         // The only function that mints, and three that read.
         'contentIdNamespace',
         'contentIdPath',
-        'isReservedNamespace',
         'parseContentId',
       ],
     ],

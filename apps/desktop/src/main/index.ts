@@ -36,12 +36,10 @@ interface Status {
 }
 
 async function resolveStatus(): Promise<Status> {
-  const result = await loadPacks({
-    packsDir: packsDir(),
-    // The shell names the directory permitted to own the reserved namespace. The loader has no
-    // opinion about which pack is "the base one" — that is invariant 6.
-    reservedNamespaceOwner: 'core-empty',
-  });
+  // One argument. The shell no longer names a privileged pack, because there is no longer a
+  // privilege to grant — see ADR-0046. Invariant 6 now holds because the mechanism is absent, not
+  // because a hollow one is pointed somewhere harmless.
+  const result = await loadPacks({ packsDir: packsDir() });
 
   if (!result.ok) {
     return {

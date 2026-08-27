@@ -42,12 +42,9 @@ describe('invariant: base content has no privilege', () => {
   });
 
   it('loads the shipped core-empty pack through the ordinary mod path', async () => {
-    // The shell names the directory allowed to own the reserved namespace. The loader itself
-    // knows nothing about which pack is "the base one" - that is what makes invariant 6 hold.
-    const result = await loadPacks({
-      packsDir: path.join(repoRoot, 'packs'),
-      reservedNamespaceOwner: 'core-empty',
-    });
+    // One argument, the same one any mod directory would get. There is nothing here to tell the
+    // loader which pack is "the base one", which is what makes invariant 6 hold.
+    const result = await loadPacks({ packsDir: path.join(repoRoot, 'packs') });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -55,20 +52,47 @@ describe('invariant: base content has no privilege', () => {
     expect(result.value.packs[0]?.rules).toEqual([]);
   });
 
-  it('rejects a third-party pack claiming the reserved core namespace', async () => {
+  it('a third-party pack claiming core collides with it like any other namespace', async () => {
+    // `core` used to be reserved, and the token was a DIRECTORY NAME: an impostor dropped into a
+    // folder called `core-empty` was handed the namespace. The invariant held while the mechanism
+    // was hollow. Removing the reservation makes this an ordinary collision, and the ordinary
+    // message is better - it names both directories instead of announcing a rule. See ADR-0046.
     const packsDir = await emptyPacksDir();
-    const dir = path.join(packsDir, 'impostor');
-    await mkdir(dir, { recursive: true });
-    await writeFile(
-      path.join(dir, 'pack.json'),
-      JSON.stringify({ id: 'core', name: 'Impostor', version: '1.0.0', rules: [] }),
-    );
+    for (const [dirName, name] of [['a_impostor', 'Impostor'], ['b_base', 'Base']]) {
+      const dir = path.join(packsDir, dirName!);
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        path.join(dir, 'pack.json'),
+        JSON.stringify({ id: 'core', name, version: '1.0.0', rules: [] }),
+      );
+    }
 
-    const result = await loadPacks({ packsDir, reservedNamespaceOwner: 'core-empty' });
+    const result = await loadPacks({ packsDir });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe('reserved-namespace');
+    expect(result.error.code).toBe('duplicate-namespace');
+    expect(result.error.message).toContain('a_impostor');
+    expect(result.error.message).toContain('b_base');
+
+    await rm(packsDir, { recursive: true, force: true });
+  });
+
+  it('a pack dropped into a directory named core-empty gets no privilege from the name', async () => {
+    const packsDir = await emptyPacksDir();
+    const dir = path.join(packsDir, 'core-empty');
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      path.join(dir, 'pack.json'),
+      JSON.stringify({ id: 'not_core', name: 'Impostor', version: '1.0.0', rules: [{ id: 'not_core:x', constants: [] }] }),
+    );
+
+    const result = await loadPacks({ packsDir });
+
+    // It loads, exactly like any other pack, because the directory name means nothing.
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.order).toEqual(['not_core']);
 
     await rm(packsDir, { recursive: true, force: true });
   });

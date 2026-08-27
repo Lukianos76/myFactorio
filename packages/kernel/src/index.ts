@@ -9,11 +9,9 @@ export {
   PATH_SOURCE,
   CONTENT_ID_SOURCE,
   MAX_CONTENT_ID_LENGTH,
-  RESERVED_NAMESPACE,
   parseContentId,
   contentIdNamespace,
   contentIdPath,
-  isReservedNamespace,
 } from './id.js';
 export { type Handle, Registry } from './registry.js';
 export {
