@@ -76,11 +76,8 @@ interface DiscoveredPack {
   readonly manifest: PackManifest;
 }
 
-async function listCandidateDirs(options: LoadOptions): Promise<Result<readonly string[], LoadError>> {
-  if (options.entries !== undefined) {
-    // Sorted here too: an explicit list is no more trustworthy than the filesystem's.
-    return ok([...options.entries].sort(compareCodeUnits));
-  }
+async function enumerate(options: LoadOptions): Promise<Result<readonly string[], LoadError>> {
+  if (options.entries !== undefined) return ok(options.entries);
 
   try {
     const dirents = await readdir(options.packsDir, { withFileTypes: true });
@@ -88,9 +85,6 @@ async function listCandidateDirs(options: LoadOptions): Promise<Result<readonly 
     for (const dirent of dirents) {
       if (dirent.isDirectory()) names.push(dirent.name);
     }
-    // readdir order depends on the filesystem, so it differs between this machine and a player's.
-    // Sorting here is what stops that difference reaching handle assignment. See ADR-0011.
-    names.sort(compareCodeUnits);
     return ok(names);
   } catch (cause) {
     const code = (cause as NodeJS.ErrnoException).code;
@@ -104,6 +98,18 @@ async function listCandidateDirs(options: LoadOptions): Promise<Result<readonly 
     }
     return err({ code: 'packs-dir-missing', message: `Cannot read ${options.packsDir}: ${String(cause)}.` });
   }
+}
+
+async function listCandidateDirs(options: LoadOptions): Promise<Result<readonly string[], LoadError>> {
+  const found = await enumerate(options);
+  if (!found.ok) return found;
+
+  // ONE sort site, deliberately. readdir order depends on the filesystem, so it differs between
+  // this machine and a player's, and that difference would reach handle assignment through the
+  // topological sort's tie-breaks (ADR-0011). Sorting here rather than inside each branch is what
+  // lets the determinism test cover the readdir path: the test injects `entries`, so a second sort
+  // hidden in the readdir branch would go untested while looking perfectly correct.
+  return ok([...found.value].sort(compareCodeUnits));
 }
 
 async function readManifest(packsDir: string, dirName: string): Promise<Result<DiscoveredPack | null, LoadError>> {

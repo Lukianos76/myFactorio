@@ -15,7 +15,8 @@
     "gen:verify": "node tools/gen-json-schema.mjs --verify",
     "test": "vitest run",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run arch && pnpm run gen:verify && pnpm run test",
-    "e2e:no-core": "node tools/e2e-no-core.mjs"
+    "e2e:no-core": "node tools/e2e-no-core.mjs",
+    "verify:guardrails": "node tools/verify-guardrails.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
