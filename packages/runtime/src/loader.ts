@@ -63,11 +63,26 @@ export type LoadErrorCode =
   | 'namespace-mismatch'
   | 'missing-dependency'
   | 'dependency-cycle'
+  | 'dependency-version-mismatch'
   | 'compile-failed';
 
 export interface LoadError {
   readonly code: LoadErrorCode;
   readonly message: string;
+}
+
+/**
+ * Numeric major.minor.patch comparison. The schema guarantees the shape, so there is nothing to
+ * parse defensively here — and nothing locale-dependent either, which a string comparison would be.
+ */
+function compareVersions(a: string, b: string): number {
+  const left = a.split('.').map(Number);
+  const right = b.split('.').map(Number);
+  for (let i = 0; i < 3; i += 1) {
+    const difference = (left[i] ?? 0) - (right[i] ?? 0);
+    if (difference !== 0) return difference < 0 ? -1 : 1;
+  }
+  return 0;
 }
 
 interface DiscoveredPack {
@@ -185,6 +200,25 @@ export async function loadPacks(options: LoadOptions): Promise<Result<LoadedPack
     byNamespace.set(namespace, pack);
   }
 
+  // Declared dependency versions used to be validated by the schema and then thrown away: a pack
+  // asking for base@42.0.0 loaded happily against base@1.0.0, while PackRef.version was written
+  // into every save. Information collected, carried and never used is worse than absent - it reads
+  // like a guarantee.
+  for (const pack of discovered) {
+    for (const [dependency, required] of Object.entries(pack.manifest.dependencies)) {
+      const provider = byNamespace.get(dependency);
+      if (provider === undefined) continue; // reported as a missing dependency below
+      if (compareVersions(provider.manifest.version, required) < 0) {
+        return err({
+          code: 'dependency-version-mismatch',
+          message:
+            `${pack.dir} requires ${dependency} ${required}, but ${provider.dir} provides ` +
+            `${provider.manifest.version}. Update the dependency or relax the requirement.`,
+        });
+      }
+    }
+  }
+
   const sorted = stableTopologicalSort(
     discovered.map((pack) => ({
       id: pack.manifest.id,
@@ -224,7 +258,15 @@ export async function loadPacks(options: LoadOptions): Promise<Result<LoadedPack
     }
 
     // Registration order follows the deterministic load order, so handles are reproducible.
-    for (const id of compiled.value.ruleIds) registry.register(id);
+    // The Result is handled rather than dropped: these ids were parsed a few lines above, so a
+    // failure here means the parser and the registry disagree, and swallowing it in the one file
+    // whose package defines Result was not defensible.
+    for (const id of compiled.value.ruleIds) {
+      const registered = registry.register(id);
+      if (!registered.ok) {
+        return err({ code: 'invalid-manifest', message: `${pack.dir}: ${registered.error.message}` });
+      }
+    }
 
     packs.push({
       id: namespace,

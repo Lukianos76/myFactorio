@@ -13,8 +13,6 @@
   "dependencies": {
     "@myfactorio/kernel": "workspace:*",
     "@myfactorio/rules-schema": "workspace:*",
-    "@myfactorio/isa": "workspace:*",
-    "@myfactorio/rules-compiler": "workspace:*",
-    "@myfactorio/save": "workspace:*"
+    "@myfactorio/rules-compiler": "workspace:*"
   }
 }

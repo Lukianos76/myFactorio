@@ -483,6 +483,43 @@ if (install.code !== 0) {
   process.exit(1);
 }
 
+/*
+ * Baselines, before anything is broken.
+ *
+ * A case proves something only if the tool went from green to red BECAUSE of the edit. If the tool
+ * was already failing on a pristine tree, every case using it "passes" while proving nothing - the
+ * vacuity that let case 2 sit in the score on the bare word "error" for two sessions, in its most
+ * general form. Asserting the regex matches is not enough; asserting the transition is.
+ *
+ * Cheap, too: distinct tools, run once each, not once per case.
+ */
+const tools = [...new Set(CASES.map((testCase) => testCase.tool))].sort();
+console.log(`\nchecking ${tools.length} tools are green before anything is broken...`);
+
+const broken = [];
+for (const tool of tools) {
+  const result = run(tool, worktree);
+  if (result.code !== 0) broken.push({ tool, output: result.output });
+}
+
+if (broken.length > 0) {
+  console.error('\nThese tools already fail on an untouched tree, so every case using them would');
+  console.error('report a refusal that has nothing to do with the guardrail:\n');
+  for (const { tool, output } of broken) {
+    console.error(`  ${tool}`);
+    console.error(
+      output
+        .split('\n')
+        .filter((line) => line.trim() !== '')
+        .slice(-4)
+        .map((line) => `      | ${line}`)
+        .join('\n'),
+    );
+  }
+  teardown();
+  process.exit(1);
+}
+
 let failures = 0;
 console.log('\nBreaking each invariant on purpose and checking that a tool refuses.\n');
 

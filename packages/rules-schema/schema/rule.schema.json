@@ -5,7 +5,8 @@
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^[a-z0-9_]+:[a-z0-9_/]+$",
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9_]*:[a-z0-9_]+(?:\\/[a-z0-9_]+)*$",
       "description": "Fully qualified content id."
     },
     "constants": {

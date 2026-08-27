@@ -111,9 +111,6 @@ importers:
 
   packages/runtime:
     dependencies:
-      '@myfactorio/isa':
-        specifier: workspace:*
-        version: link:../isa
       '@myfactorio/kernel':
         specifier: workspace:*
         version: link:../kernel
@@ -123,9 +120,6 @@ importers:
       '@myfactorio/rules-schema':
         specifier: workspace:*
         version: link:../rules-schema
-      '@myfactorio/save':
-        specifier: workspace:*
-        version: link:../save
 
   packages/save:
     dependencies:
@@ -133,14 +127,7 @@ importers:
         specifier: workspace:*
         version: link:../kernel
 
-  packages/sim:
-    dependencies:
-      '@myfactorio/isa':
-        specifier: workspace:*
-        version: link:../isa
-      '@myfactorio/kernel':
-        specifier: workspace:*
-        version: link:../kernel
+  packages/sim: {}
 
   packs/core-empty:
     devDependencies:

@@ -5,7 +5,7 @@
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^[a-z0-9_]+$",
+      "pattern": "^[a-z][a-z0-9_]*$",
       "description": "Pack namespace. Owns every content id the pack declares."
     },
     "name": {
@@ -24,7 +24,7 @@
       "type": "object",
       "propertyNames": {
         "type": "string",
-        "pattern": "^[a-z0-9_]+$",
+        "pattern": "^[a-z][a-z0-9_]*$",
         "description": "Pack namespace. Owns every content id the pack declares."
       },
       "additionalProperties": {
@@ -42,7 +42,8 @@
         "properties": {
           "id": {
             "type": "string",
-            "pattern": "^[a-z0-9_]+:[a-z0-9_/]+$",
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9_]*:[a-z0-9_]+(?:\\/[a-z0-9_]+)*$",
             "description": "Fully qualified content id."
           },
           "constants": {

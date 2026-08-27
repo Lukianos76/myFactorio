@@ -125,7 +125,30 @@ describe('invariant: a file-level lint exemption does not become a laundering se
    * key for reasons the lint cannot see either.
    */
   const FROZEN = [
-    ['packages/kernel/src/id.ts', ['ContentId', 'ID_SEPARATOR', 'IdError', 'IdErrorCode', 'RESERVED_NAMESPACE', 'contentIdNamespace', 'contentIdPath', 'isReservedNamespace', 'parseContentId']],
+    [
+      'packages/kernel/src/id.ts',
+      [
+        // Grammar sources, so rules-schema can publish this grammar instead of re-typing it
+        // (ADR-0040). Strings and a number: none of them can mint a ContentId, which is the only
+        // property this freeze exists to protect.
+        'CONTENT_ID_SOURCE',
+        'MAX_CONTENT_ID_LENGTH',
+        'NAMESPACE_SOURCE',
+        'PATH_SEGMENT_SOURCE',
+        'PATH_SOURCE',
+        // The type, the separator, the reserved namespace, the errors.
+        'ContentId',
+        'ID_SEPARATOR',
+        'IdError',
+        'IdErrorCode',
+        'RESERVED_NAMESPACE',
+        // The only function that mints, and three that read.
+        'contentIdNamespace',
+        'contentIdPath',
+        'isReservedNamespace',
+        'parseContentId',
+      ],
+    ],
     ['packages/sim/src/determinism.ts', ['NonDeterminismError', 'sealAmbientSources']],
   ] as const;
 
@@ -134,7 +157,10 @@ describe('invariant: a file-level lint exemption does not become a laundering se
     const exported = [...source.matchAll(/^export (?:type|interface|const|function|class) (\w+)/gm)]
       .map((match) => match[1]!)
       .sort();
-    expect(exported).toEqual([...expected]);
+    // Both sides sorted: the list above is grouped by meaning so a reader can see what each export
+    // is for, and grouping is more useful than alphabetical order in a list whose whole job is to
+    // make someone think before adding to it.
+    expect(exported).toEqual([...expected].sort());
   });
 });
 

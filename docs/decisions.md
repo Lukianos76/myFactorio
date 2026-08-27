@@ -724,3 +724,76 @@ guardrail: a rule name that did not exist, an assertion on text the tool never p
 this. Each failed in the safe direction — a case that cannot pass is visible in the score. The
 dangerous form is the case that cannot fail, which is what `rule:` and the assert-on-test-name
 convention exist to prevent.
+
+---
+
+## ADR-0040 — One grammar for content ids, owned by kernel
+
+**Context.** `kernel` had `NAMESPACE_PATTERN`/`PATH_PATTERN`; `rules-schema` had a hand-written
+`CONTENT_ID_PATTERN` saying the same thing in different characters. Nothing compared them, and they
+had already diverged in effect: adding a hyphen to one made `parseContentId('core:a-b')` succeed
+while the published schema rejected it, with `pnpm check` green throughout. ADR-0003 says Zod is the
+single source of truth — true for the rule FORMAT, never true for the id grammar, whose real owner
+is `kernel`, outside `gen:verify`'s reach.
+
+**Decision.** `kernel` exports the grammar as source strings and `rules-schema` builds its regex
+from them, so the two cannot differ by construction. `tests/id-grammar.invariant.test.ts` still runs
+a shared corpus through both: derivation is a claim about the code, the corpus is a claim about
+behaviour, and the length limit is not expressible as a regex at all.
+
+**Tightened while opening it up.** The old grammar accepted `core:/`, `core://a`, `core:a/`, `0:0`
+and a 3005-character id. A path is now slash-separated non-empty segments, a namespace starts with a
+letter, and ids cap at 128 characters — the degenerate forms are exactly the ones that hurt once
+paths become hierarchical, and they were free to close today.
+
+**Rejected alternative.** A test asserting the two patterns are equal. It keeps the duplication and
+only reports the drift.
+
+---
+
+## ADR-0041 — A rule constraint that cannot be published does not exist
+
+**Context.** `.refine()` on a Zod schema is invisible to `z.toJSONSchema`: the emitted file is
+byte-identical, `gen:verify` stays green, and the loader silently becomes stricter than the contract
+a mod author's editor validates against. Measured — `unrepresentable: 'throw'` does not catch it
+either, so the obvious fix does not work.
+
+**Decision.** `.refine`, `.superRefine` and `.transform` are lint-banned in `rules-schema`. A
+constraint on the rule format must be expressible in JSON Schema, or the format does not have it.
+
+**Rejected alternative.** Allowing them and documenting the gap. The whole point of publishing a
+schema is that the editor and the loader agree; a constraint only one of them knows about is the
+failure the schema exists to prevent.
+
+---
+
+## ADR-0042 — Repo TypeScript is run through vite-node, not Node's type stripping
+
+**Context.** `tools/gen-json-schema.mjs` imported `@myfactorio/rules-schema` from plain Node. That
+worked only because that file happened to have no relative imports: type stripping removes types, it
+does not rewrite `./result.js` to `./result.ts`. The moment `rules-schema` imported
+`@myfactorio/kernel`, whose index does have relative imports, `pnpm gen` died on
+`Cannot find module .../result.js`. The dependency was latent from the first commit and fired on an
+unrelated change. `engines` also said `node >= 22` while stripping only became default in 22.18.
+
+**Decision.** `tools/gen-json-schema.ts` and `tools/make-save-fixture.ts` run under `vite-node`,
+which resolves the same way Vite and Vitest do. Being `.ts`, they are typechecked by `pnpm check`
+now as well.
+
+**Rejected alternative.** Keeping the `.mjs` and avoiding relative imports in whatever it touches.
+That is a constraint on unrelated packages, enforced by nothing, to preserve a convenience.
+
+---
+
+## ADR-0043 — Every verifier tool is proved green before anything is broken
+
+**Context.** A case proves something only if the tool went from green to red BECAUSE of the edit. If
+the tool already failed on an untouched tree, every case using it "passes" while proving nothing —
+the general form of the vacuity that kept case 2 in the score for two sessions.
+
+**Decision.** `verify-guardrails` runs each distinct tool once on the pristine worktree and aborts
+with the failing output if any is already red. Ten tools, once each, not once per case.
+
+**Rejected alternative.** Asserting harder on the refusal text. That checks the message, not the
+transition, and four cases have already failed on message-matching for reasons unrelated to their
+guardrail.

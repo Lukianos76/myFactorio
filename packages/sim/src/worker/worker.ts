@@ -8,7 +8,7 @@
  * It is instantiated for real by the renderer rather than merely described, so that breaking the
  * contract can be observed rather than argued about.
  */
-import { type BoundaryPayload, CTRL, STATUS_BOOTING, STATUS_READY } from '../boundary.js';
+import { type BoundaryPayload, CTRL, CTRL_SLOTS, STATUS_BOOTING, STATUS_READY } from '../boundary.js';
 import { sealAmbientSources } from '../determinism.js';
 
 // First, before any simulation code can run or any mod-supplied data is touched. From here on
@@ -29,7 +29,7 @@ scope.onmessage = (event) => {
 
   if (data instanceof SharedArrayBuffer) {
     // The one and only structured payload that ever crosses: the buffer itself, once.
-    control = new Int32Array(data, 0, 4);
+    control = new Int32Array(data, 0, CTRL_SLOTS);
     Atomics.store(control, CTRL.STATUS, STATUS_BOOTING);
     Atomics.store(control, CTRL.TICK, 0);
     Atomics.store(control, CTRL.STATUS, STATUS_READY);

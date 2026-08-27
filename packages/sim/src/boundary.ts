@@ -34,7 +34,13 @@ export const CTRL = {
   HEARTBEAT: 2,
 } as const;
 
-export const CTRL_SLOTS = 4;
+/**
+ * Derived, not written down. It was 4 for three named slots, and both the worker and the renderer
+ * hard-coded `new Int32Array(data, 0, 4)` next to the exported constant - the only place in the
+ * repository where a magic number shadowed a public constant, and the slot nobody could name was
+ * the reason it drifted.
+ */
+export const CTRL_SLOTS = Object.keys(CTRL).length;
 export const CTRL_BYTES = CTRL_SLOTS * Int32Array.BYTES_PER_ELEMENT;
 
 export const STATUS_BOOTING = 0;

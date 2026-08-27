@@ -221,6 +221,30 @@ export default tseslint.config(
     },
   },
   {
+    // A constraint that cannot be published is a constraint a mod author meets at load time with
+    // no warning in their editor. `.refine()` is invisible to z.toJSONSchema - and, measured,
+    // `unrepresentable: 'throw'` does not catch it either: the emitted schema is byte-identical, so
+    // gen:verify stays green while the loader silently gets stricter than the published contract.
+    // If the rule format needs a constraint, it has to be one JSON Schema can express. See ADR-0041.
+    files: ['packages/rules-schema/**/*.ts'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        ...ambientSourceProperties,
+        ...boundaryProperties,
+        {
+          property: 'refine',
+          message:
+            'refine() does not survive into the published JSON Schema, so a mod author\'s editor ' +
+            'accepts what the loader rejects. Express the constraint with a schema primitive, or ' +
+            'decide the format does not have it.',
+        },
+        { property: 'superRefine', message: 'superRefine() does not survive into the published JSON Schema.' },
+        { property: 'transform', message: 'transform() does not survive into the published JSON Schema.' },
+      ],
+    },
+  },
+  {
     files: ['tools/**/*.mjs'],
     languageOptions: {
       globals: { process: 'readonly', console: 'readonly' },

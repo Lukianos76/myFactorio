@@ -78,11 +78,14 @@ protocol.registerSchemesAsPrivileged([
 function registerAppProtocol(): void {
   protocol.handle('app', async (request) => {
     const url = new URL(request.url);
-    const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-    const target = path.join(rendererDir, relative);
+    const requested = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+    const target = path.join(rendererDir, requested);
 
-    // Nothing outside the built renderer directory is ever served.
-    if (!target.startsWith(rendererDir)) {
+    // Nothing outside the built renderer directory is ever served. Compared as a path relation, not
+    // as a string prefix: `startsWith(rendererDir)` also accepts a sibling called `renderer-other`,
+    // and this is the only check standing between the protocol handler and the filesystem.
+    const contained = path.relative(rendererDir, target);
+    if (contained.startsWith('..') || path.isAbsolute(contained)) {
       return new Response('Forbidden', { status: 403 });
     }
 

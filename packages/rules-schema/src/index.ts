@@ -1,4 +1,13 @@
 import { z } from 'zod';
+// The grammar comes from kernel, which owns it. It used to be re-typed here, and the two drifted:
+// parseContentId accepted core:a-b while the published schema rejected it, with nothing comparing
+// them. ADR-0003 says Zod is the single source of truth for the rule FORMAT - it never was for the
+// id grammar, and pretending otherwise is how the divergence lasted. See ADR-0040.
+import {
+  CONTENT_ID_SOURCE,
+  MAX_CONTENT_ID_LENGTH,
+  NAMESPACE_SOURCE,
+} from '@myfactorio/kernel';
 
 /**
  * The declarative rule format, and the single source of truth for it.
@@ -11,8 +20,8 @@ import { z } from 'zod';
  * exercise the compile pipeline end to end, and not one field more.
  */
 
-export const NAMESPACE_PATTERN = '^[a-z0-9_]+$';
-export const CONTENT_ID_PATTERN = '^[a-z0-9_]+:[a-z0-9_/]+$';
+export const NAMESPACE_PATTERN = `^${NAMESPACE_SOURCE}$`;
+export const CONTENT_ID_PATTERN = CONTENT_ID_SOURCE;
 export const VERSION_PATTERN = '^[0-9]+\\.[0-9]+\\.[0-9]+$';
 
 export const namespaceSchema = z
@@ -22,6 +31,7 @@ export const namespaceSchema = z
 
 export const contentIdSchema = z
   .string()
+  .max(MAX_CONTENT_ID_LENGTH)
   .regex(
     new RegExp(CONTENT_ID_PATTERN),
     'Content ids are namespaced and lowercase, as in core:sand or my_mod:ore/iron.',

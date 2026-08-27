@@ -13,9 +13,5 @@
       "types": "./src/worker/worker.ts",
       "default": "./src/worker/worker.ts"
     }
-  },
-  "dependencies": {
-    "@myfactorio/kernel": "workspace:*",
-    "@myfactorio/isa": "workspace:*"
   }
 }
