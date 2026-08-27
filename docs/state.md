@@ -32,9 +32,15 @@ determinism mechanism was actually under test: the loader pre-sort and the topol
 each masked the other's absence (ADR-0022, ADR-0023). Three plausible, documented, wrong claims,
 all of which survived until a rule was deliberately broken.
 
-**Open, and next.** `pnpm e2e:no-core` is written but **has never been executed** — it builds the
-shell and launches a real Electron against an empty content directory, and it is the only part of
-this session not observed working. Run it first. Two absences are by design and will bite the first
+**Open, and next.** `pnpm e2e:no-core` now runs and passes, both paths. With no content directory
+the shell opens, reports the missing `pack.json` by name and exits 0. With the shipped pack it
+loads `core` through the ordinary mod path, the renderer comes up cross-origin isolated, the worker
+boots over the `SharedArrayBuffer` and answers an integer-only message — so invariant 3 is observed
+at runtime rather than only enforced at compile time. Getting there cost two fixes worth knowing
+about: `electron` must stay external in the main bundle or it inlines a shim that spawns
+`install.js` and dies claiming it is not installed (ADR-0024), and the renderer signals completion
+itself instead of main reading its DOM after `loadURL`, which would have raced on a slower machine
+(ADR-0025). Two absences are by design and will bite the first
 person who meets them: there is no seeded PRNG, so the ban on `Math.random` leaves `sim` with no
 randomness at all (ADR-0011), and plain `+` string concatenation escapes the hot-path lint because
 type-aware linting was rejected for speed (ADR-0010). The natural next milestone is the first real

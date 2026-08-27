@@ -126,12 +126,27 @@ async function main(): Promise<void> {
     },
   });
 
-  await window.loadURL(`${RENDERER_ORIGIN}/index.html`);
+  // The renderer reports once it has finished starting, rather than main reading state as soon as
+  // loadURL resolves. loadURL settles on the load event, while the renderer's own startup - asking
+  // for status, allocating the shared buffer, waiting for the worker to reach ready - is still in
+  // flight. Reading at that moment would race, and would race differently on a slower machine.
+  ipcMain.handle('myfactorio:rendered', (_event, payload: unknown) => {
+    process.stdout.write(`[myfactorio] renderer ${JSON.stringify(payload)}\n`);
+    if (isE2E) app.quit();
+  });
 
   if (isE2E) {
-    process.stdout.write('[myfactorio] renderer-ready\n');
-    app.quit();
+    // Never hang a CI run because the renderer failed to report. Quitting without the line is a
+    // legible failure; hanging is not.
+    setTimeout(() => {
+      process.stdout.write('[myfactorio] renderer-timeout\n');
+      app.quit();
+    }, 20_000).unref();
   }
+
+  await window.loadURL(`${RENDERER_ORIGIN}/index.html`);
+
+  if (isE2E) process.stdout.write('[myfactorio] renderer-ready\n');
 }
 
 app.on('window-all-closed', () => {

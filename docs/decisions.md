@@ -386,3 +386,38 @@ suite stays green and the survivor quietly covers for it until the day it too is
 
 **The general form.** Defence in depth is worth having, and it makes end-to-end tests blind. Any
 belt-and-braces pair needs a test that removes the belt.
+
+---
+
+## ADR-0024 — `electron` stays external in the main bundle
+
+**Context.** The first real launch of the shell failed with "Electron failed to install correctly.
+Please delete node_modules/electron". Nothing was wrong with the install: the main bundle had
+inlined the `electron` npm package, whose `module.exports` is the *path to the binary*, computed by
+spawning `install.js` from `__dirname`. Bundled, that `__dirname` no longer exists.
+
+**Decision.** `rollupOptions.external: ['electron', /^node:/]` for the main process. Workspace
+packages stay bundled, because they are consumed as TypeScript source (ADR-0004).
+
+**Rejected alternative.** The `commonjsOptions: { include: [/node_modules/] }` that caused it, added
+to make sure the workspace packages were inlined. They already were — Vite resolves them as source,
+not as CommonJS dependencies — so the option bought nothing and disabled electron-vite's default
+externalisation. The error message it produced pointed at the install, which is the wrong place
+entirely; that is worth remembering the next time Electron claims it is not installed.
+
+---
+
+## ADR-0025 — The renderer reports when it is done; main does not read its state
+
+**Context.** The e2e harness needs to know what the renderer ended up showing. Reading it right
+after `loadURL` resolves does not work: `loadURL` settles on the load event, while the renderer's
+own startup — fetching status, allocating the shared buffer, waiting for the worker to reach ready
+— is still in flight.
+
+**Decision.** The renderer calls `report()` over the preload bridge once it has finished, and main
+prints that and quits. A 20-second timeout in main prints `renderer-timeout` and quits anyway.
+
+**Rejected alternative.** `executeJavaScript` after load, optionally with a delay. It passes on this
+machine and turns into a flaky test on a slower one, which is worse than no test — a harness that
+fails intermittently gets muted rather than fixed. A timeout that reports a distinct failure line is
+legible; hanging is not.
