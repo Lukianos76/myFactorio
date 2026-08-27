@@ -127,8 +127,8 @@ const CASES = [
         (s) => s.replace('    ready.sort(compareCodeUnits);', '    // tie-break removed'),
       ],
     ],
-    tool: 'pnpm vitest run packages/runtime',
-    expect: /determinism|identical|expected/i,
+    tool: 'pnpm vitest run packages/kernel',
+    expect: /tie-break|expected/i,
   },
   {
     invariant: '7',

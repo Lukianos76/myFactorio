@@ -365,3 +365,24 @@ that a duplicate-namespace conflict reports identically whatever the enumeration
 **Rejected alternative.** Removing the pre-sort as redundant. Two players with the same broken mod
 set would get different error messages, and a bug report stops being reproducible. It is cheap
 defence in depth; it just is not what ADR-0011 implied it was.
+
+---
+
+## ADR-0023 — Each determinism mechanism is tested at its own level
+
+**Context.** Two mechanisms carry deterministic load order: the loader sorts its input, and
+`stableTopologicalSort` breaks ties by id. The verification pass showed that removing *either* one
+left every test green — because each masks the absence of the other. With the input pre-sorted the
+tie-break never faces an unordered list; with the tie-break present the input order stops mattering.
+
+**Decision.** Test each at its own level. `packages/kernel/src/order.invariant.test.ts` calls
+`stableTopologicalSort` directly with permuted node lists, which is the only way to put the
+tie-break under load. The loader test keeps covering what the pre-sort actually governs (ADR-0022).
+
+**Rejected alternative.** Testing both through the loader, which is the natural place to look
+because that is where determinism matters to a player. Two redundant mechanisms tested only through
+their combination are two mechanisms with no test between them: whichever one someone deletes, the
+suite stays green and the survivor quietly covers for it until the day it too is touched.
+
+**The general form.** Defence in depth is worth having, and it makes end-to-end tests blind. Any
+belt-and-braces pair needs a test that removes the belt.
