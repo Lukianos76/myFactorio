@@ -4,14 +4,21 @@
 
 **Where we are.** The skeleton and its guardrails, and nothing else. Eight packages, an Electron
 shell, an empty base content pack, four scripts in `tools/`. No gameplay: no rendering, no elements,
-no game loop, no opcode that expresses a rule of play. Current, measured, on `adversarial-review`:
+no game loop, no opcode that expresses a rule of play. Current, measured, on `main` at
+github.com/Lukianos76/myFactorio:
 
 ```
 pnpm check          14.0 s   144 tests, 56 modules cruised, 17 dependency rules
 pnpm verify:guardrails  31/31   in an isolated worktree, ~60 s
 pnpm e2e:no-core        11/11   real Electron, both paths
 docs/decisions.md       46 ADRs
+CI                      green   check 31s · e2e 30s · guardrails 1m20s
 ```
+
+The CI has now run. All three jobs passed on the first push, and the e2e passed on Linux under
+xvfb — cross-origin isolation, the worker booting over the `SharedArrayBuffer` and the integer
+round-trip had only ever been observed on Windows before. The guardrails job also confirms the
+verifier restores everything it touches, on a machine that has never seen this repository.
 
 **What the adversarial review changed.** Two rounds of review broke the guardrails rather than
 reading them, and found 24 bypasses that passed `pnpm check`. The pattern behind almost all of them:
@@ -36,9 +43,8 @@ sessions (ADR-0031). And "exit 0" was taken as proof four separate times: depend
 needs `validate: true`, `git status --porcelain` always exits 0, `git worktree remove` leaves
 `node_modules`, `unrepresentable: 'throw'` does not throw on `.refine()` (ADR-0030).
 
-**Open.** The CI workflow has still never run — its YAML parses and `--frozen-lockfile` holds
-locally, and that is the whole of the evidence; the first push is the test. Known and deliberate
-gaps: no seeded PRNG, so `sim` has no randomness at all by design (ADR-0011); a generic
+**Open.** Known and deliberate gaps: no seeded PRNG, so `sim` has no randomness at all by design
+(ADR-0011); a generic
 `brand<T>()` helper still launders any string into a `ContentId` and no syntactic rule can see it
 (ADR-0037); `const M = Math` passes the lint, which is why the runtime seal exists; plain `+` string
 concatenation escapes the hot-path lint, though the heap measurement catches it in volume.

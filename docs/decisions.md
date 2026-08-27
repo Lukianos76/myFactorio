@@ -870,3 +870,28 @@ mechanism cannot be circumvented by finding the mechanism's edge.
 **Kept as convention.** `core` still belongs to the shipped pack by convention, and a mod author who
 takes it gets a load-time collision naming both packs. Convention plus a good error message, stated
 as such, rather than enforcement that only looked like enforcement.
+
+---
+
+## ADR-0047 — The CI has run, and ADR-0028's caveat is discharged
+
+**Context.** ADR-0028 said plainly that the workflow had never executed and that its YAML parsing
+was the whole of the evidence. That caveat is now settled: the first push went green on all three
+jobs.
+
+**What it verified that nothing local could.** The e2e passed on Linux under `xvfb`. Cross-origin
+isolation, the worker booting over the `SharedArrayBuffer` and the integer round-trip had only ever
+been observed on Windows, so the `app://` handler's COOP/COEP headers are now known to work on a
+second platform rather than assumed to. The guardrails job also proves the verifier leaves no trace
+on a machine that has never seen this repository — a claim previously resting on a local check that
+had, at one point, been silently false.
+
+**Amended immediately.** Every job carried a deprecation annotation: `checkout`, `setup-node` and
+`pnpm/action-setup` all targeted the Node 20 runtime. Bumped to versions read from the registry
+rather than guessed at. A green run with a warning on every job is a green run that trains people to
+ignore the warnings.
+
+**Note on the credential helper.** `gh repo create --push` authenticated through gh; a plain
+`git push` afterwards did not, because no git credential helper was configured. Set repo-locally
+(`git config --local`) rather than globally, so pushing this project does not change how every other
+repository on the machine authenticates.
