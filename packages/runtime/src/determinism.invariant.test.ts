@@ -115,6 +115,36 @@ describe('invariant: loading is deterministic regardless of directory enumeratio
     expect(backward.error.message).toBe(forward.error.message);
   });
 
+  /**
+   * The real readdir, with no `entries` in sight.
+   *
+   * `entries` exists so the test can stand in for a filesystem that enumerates differently. It then
+   * became the only path the tests took, so moving the sort into the injected branch left the actual
+   * readdir unsorted and everything stayed green — a mock that ended up being the thing under test.
+   * Directories are created here in reverse order, and the assertion is on the load order, which is
+   * a claim about the output whatever the filesystem hands back.
+   */
+  it('sorts what the filesystem actually returns, with no entries override', async () => {
+    const packsDir = await mkdtemp(path.join(tmpdir(), 'myfactorio-readdir-'));
+    dirs.push(packsDir);
+
+    for (const id of ['zulu', 'mike', 'alpha']) {
+      const dir = path.join(packsDir, id);
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        path.join(dir, 'pack.json'),
+        JSON.stringify({ id, name: id, version: '1.0.0', rules: [{ id: `${id}:a`, constants: [] }] }),
+      );
+    }
+
+    const result = await loadPacks({ packsDir });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.order).toEqual(['alpha', 'mike', 'zulu']);
+    expect(result.value.registry.ids()).toEqual(['alpha:a', 'mike:a', 'zulu:a']);
+  });
+
   it('detects a dependency cycle instead of resolving it arbitrarily', async () => {
     const packsDir = await mkdtemp(path.join(tmpdir(), 'myfactorio-cycle-'));
     dirs.push(packsDir);

@@ -50,6 +50,64 @@ function ambientSources(): readonly (readonly [string, Holder, string])[] {
 }
 
 /**
+ * The constructor, not only the statics.
+ *
+ * Sealing `Date.now` left `const D = Date; new D().getTime()` reading the wall clock — a static
+ * method replaced while the class that carries the same information was untouched. Sealing the
+ * global binding covers every alias, because an alias is a reference to this binding.
+ *
+ * `timeOrigin` is here for the neighbouring reason: it is a property read, not a call, so replacing
+ * functions never reached it.
+ */
+function sealConstructors(): readonly string[] {
+  const sealed: string[] = [];
+
+  const denyDate = function DeniedDate(): never {
+    throw new NonDeterminismError('new Date()');
+  };
+  // Replacing the global binding drops the statics with it, and `Date.now()` then failed with
+  // "Date.now is not a function" - refused, but saying nothing about why. The denial has to carry
+  // the same surface as what it replaced, or it trades a clear diagnosis for a confusing one.
+  for (const staticName of ['now', 'parse', 'UTC'] as const) {
+    Object.defineProperty(denyDate, staticName, {
+      value: (): never => {
+        throw new NonDeterminismError(`Date.${staticName}`);
+      },
+      writable: false,
+      configurable: false,
+    });
+  }
+
+  try {
+    Object.defineProperty(globalThis, 'Date', {
+      value: denyDate,
+      writable: false,
+      configurable: false,
+    });
+    sealed.push('Date');
+  } catch {
+    /* already sealed */
+  }
+
+  const performance = holder((globalThis as Holder)['performance']);
+  if (performance !== null && 'timeOrigin' in performance) {
+    try {
+      Object.defineProperty(performance, 'timeOrigin', {
+        get: (): never => {
+          throw new NonDeterminismError('performance.timeOrigin');
+        },
+        configurable: false,
+      });
+      sealed.push('performance.timeOrigin');
+    } catch {
+      /* already sealed, or not configurable in this host */
+    }
+  }
+
+  return sealed;
+}
+
+/**
  * Call once, first thing, in any context that runs simulation code. Idempotent.
  *
  * Non-writable and non-configurable, so a mod cannot put the original back.
@@ -70,5 +128,5 @@ export function sealAmbientSources(): readonly string[] {
     }
   }
 
-  return sealed;
+  return [...sealed, ...sealConstructors()];
 }

@@ -11,6 +11,7 @@ import {
   parseContentId,
   stableTopologicalSort,
 } from '@myfactorio/kernel';
+import { INSTRUCTION_BYTES } from '@myfactorio/isa';
 import { type CompiledRules, compileRules } from '@myfactorio/rules-compiler';
 import { type PackManifest, formatIssues, packManifestSchema } from '@myfactorio/rules-schema';
 
@@ -42,7 +43,33 @@ export interface LoadedPack {
   readonly version: string;
   readonly dir: string;
   readonly rules: readonly ContentId[];
-  readonly compiled: CompiledRules;
+  /** Instructions in the compiled program. Metadata, not the bytes. */
+  readonly programLength: number;
+}
+
+/**
+ * The compiled programs, deliberately NOT on LoadedPack.
+ *
+ * `save-no-isa`, `save-no-sim` and `modding-api-no-isa` closed every IMPORT path by which bytecode
+ * could reach the save container, and the data path stayed wide open: `apps` may import anything,
+ * `LoadedPack.compiled.program` was a public `Uint8Array`, and `SaveDoc.payload` is an opaque
+ * `Uint8Array` by design (ADR-0014). Two correct decisions, and between them a five-line function
+ * that writes bytecode into a `.fsav` without any package ever seeing an opcode. ADR-0006 claimed
+ * "never written to disk" and it was false the whole time.
+ *
+ * So the bytes are not handed out. They live here, and when the simulation eventually needs them
+ * they cross into the worker as a SharedArrayBuffer through the boundary in ADR-0034 — which is
+ * where they were always going, and which is not a value anyone can pass to `writeSave`.
+ *
+ * Honest about what this does not do: `apps` can still build a Uint8Array of anything and persist
+ * it. What is gone is the convenient path, where the loader hands you compiled bytecode already
+ * shaped like a save payload. See ADR-0048.
+ */
+const programs = new WeakMap<LoadedPacks, ReadonlyMap<string, CompiledRules>>();
+
+/** For the future worker hand-off. Returns nothing a caller can serialise by accident. */
+export function programInstructionCount(loaded: LoadedPacks, packId: string): number {
+  return programs.get(loaded)?.get(packId)?.program.byteLength ?? 0;
 }
 
 export interface LoadedPacks {
@@ -274,6 +301,7 @@ async function loadPacksOrThrow(options: LoadOptions): Promise<Result<LoadedPack
 
   const registry = new Registry();
   const packs: LoadedPack[] = [];
+  const compiledByPack = new Map<string, CompiledRules>();
 
   for (const namespace of sorted.value) {
     const pack = byNamespace.get(namespace)!;
@@ -309,15 +337,18 @@ async function loadPacksOrThrow(options: LoadOptions): Promise<Result<LoadedPack
       }
     }
 
+    compiledByPack.set(namespace, compiled.value);
     packs.push({
       id: namespace,
       name: pack.manifest.name,
       version: pack.manifest.version,
       dir: pack.dir,
       rules: compiled.value.ruleIds,
-      compiled: compiled.value,
+      programLength: compiled.value.program.byteLength / INSTRUCTION_BYTES,
     });
   }
 
-  return ok({ packs, order: sorted.value, registry });
+  const loaded: LoadedPacks = { packs, order: sorted.value, registry };
+  programs.set(loaded, compiledByPack);
+  return ok(loaded);
 }

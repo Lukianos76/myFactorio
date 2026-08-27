@@ -144,6 +144,75 @@ const CASES = [
     expect: /loads the shipped core-empty pack/,
   },
   {
+    invariant: 'ADR-0048',
+    breaks: 'persisting bytecode through the DATA path, which every import rule leaves open',
+    edits: [
+      [
+        'apps/desktop/src/main/index.ts',
+        (s) =>
+          // Through loadPacks, the way the real bypass went. Declaring the parameter shape here
+          // would only prove that a hand-written interface typechecks against itself - which is
+          // what the first version of this case did, and why it reported MISS.
+          `${s}\n` +
+          "import { writeSave } from '@myfactorio/save';\n" +
+          'export async function cacheProgram(): Promise<Uint8Array | null> {\n' +
+          "  const loaded = await loadPacks({ packsDir: packsDir() });\n" +
+          '  if (!loaded.ok) return null;\n' +
+          '  const first = loaded.value.packs[0];\n' +
+          '  if (first === undefined) return null;\n' +
+          '  return writeSave({\n' +
+          '    version: 2, palette: [], packs: [], migratedFrom: 2,\n' +
+          "    chunks: [{ id: 'bytecode', byteOffset: 0, byteLength: first.compiled.program.byteLength, elementSize: 1 }],\n" +
+          '    payload: first.compiled.program,\n' +
+          '  });\n' +
+          '}\n',
+      ],
+    ],
+    // Not an import rule - apps may import anything, and that was the point. LoadedPack simply no
+    // longer carries the bytes, so the parameter shape has nothing to bind to.
+    tool: 'pnpm typecheck',
+    expect: /error TS/,
+  },
+  {
+    invariant: 'ADR-0049',
+    breaks: 'a service locator on globalThis, a dependency the graph cannot see',
+    edits: [
+      [
+        'packages/kernel/src/registry.ts',
+        (s) =>
+          `${s}\nexport const bridge = (globalThis as unknown as { __myfactorio?: unknown }).__myfactorio;\n`,
+      ],
+    ],
+    tool: 'pnpm lint',
+    expect: /dependency the graph cannot see/,
+  },
+  {
+    invariant: 'ADR-0050',
+    breaks: 'adding a hot function nobody measures',
+    edits: [
+      [
+        'packages/sim/src/hot/buffer-ops.ts',
+        (s) =>
+          `${s}\nexport function scanRegion(cells: Uint16Array, from: number): number {\n` +
+          '  return cells[from] ?? 0;\n}\n',
+      ],
+    ],
+    tool: 'pnpm vitest run tests/hot-allocation',
+    expect: /not a list somebody remembered/,
+  },
+  {
+    invariant: 'Meta',
+    breaks: 'padding the root CLAUDE.md without adding a line',
+    edits: [
+      [
+        'CLAUDE.md',
+        (s) => s.replace('## Verify', `## Verify${' Detail restated at length here.'.repeat(120)}`),
+      ],
+    ],
+    tool: 'pnpm vitest run tests/guardrails',
+    expect: /bytes/,
+  },
+  {
     invariant: '1',
     breaks: 'forging a ContentId with a cast instead of parseContentId',
     edits: [
@@ -329,6 +398,63 @@ const CASES = [
     // against SharedArrayBuffer rather than naming the union, so asserting on the union name
     // matched nothing while the type was refusing exactly as intended.
     expect: /renderer[\\/]index\.ts.*error TS(2353|2345)/,
+  },
+  {
+    invariant: '7 / ADR-0035',
+    breaks: 'reaching the clock through an alias and a constructor, where Date.now is sealed',
+    edits: [
+      [
+        'packages/sim/src/world.ts',
+        (s) =>
+          s.replace(
+            '  return CTRL_BYTES +',
+            '  const D = Date;\n  void new D().getTime();\n  return CTRL_BYTES +',
+          ),
+      ],
+    ],
+    tool: 'pnpm lint',
+    expect: /breaks determinism/,
+  },
+  {
+    invariant: '7 / ADR-0035',
+    breaks: 'reading performance.timeOrigin, which is a property and not a call',
+    edits: [
+      [
+        'packages/sim/src/world.ts',
+        (s) => s.replace('  return CTRL_BYTES +', '  void performance.timeOrigin;\n  return CTRL_BYTES +'),
+      ],
+    ],
+    tool: 'pnpm lint',
+    expect: /breaks determinism/,
+  },
+  {
+    invariant: '4',
+    breaks: 'a callback on a METHOD of an exported class, not on a bare function',
+    edits: [
+      [
+        'packages/sim/src/world.ts',
+        (s) =>
+          `${s}\nexport class Ticker {\n` +
+          '  readonly #hooks: ((index: number) => void)[] = [];\n' +
+          '  onCell(handler: (index: number) => void): void {\n    this.#hooks.push(handler);\n  }\n}\n',
+      ],
+      ['packages/sim/src/index.ts', (s) => s.replace('  viewWorld,', '  viewWorld,\n  Ticker,')],
+    ],
+    tool: 'pnpm vitest run tests/guardrails',
+    expect: /onCell|Ticker/,
+  },
+  {
+    invariant: '4',
+    breaks: 'an unconstrained generic, which the walker\'s own comment predicted',
+    edits: [
+      [
+        'packages/sim/src/world.ts',
+        (s) => `${s}\nexport function withWorld<T>(world: World, extra: T): T {\n  void world;\n  return extra;\n}\n`,
+      ],
+      ['packages/sim/src/index.ts', (s) => s.replace('  viewWorld,', '  viewWorld,\n  withWorld,')],
+    ],
+    tool: 'pnpm vitest run tests/guardrails',
+    expect: /withWorld/,
   },
   {
     invariant: '4',

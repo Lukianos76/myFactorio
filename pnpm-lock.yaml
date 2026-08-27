@@ -111,6 +111,9 @@ importers:
 
   packages/runtime:
     dependencies:
+      '@myfactorio/isa':
+        specifier: workspace:*
+        version: link:../isa
       '@myfactorio/kernel':
         specifier: workspace:*
         version: link:../kernel

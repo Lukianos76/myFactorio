@@ -895,3 +895,69 @@ ignore the warnings.
 `git push` afterwards did not, because no git credential helper was configured. Set repo-locally
 (`git config --local`) rather than globally, so pushing this project does not change how every other
 repository on the machine authenticates.
+
+---
+
+## ADR-0048 — Compiled bytecode is not handed out, superseding ADR-0006's claim
+
+**Context.** `save-no-isa`, `save-no-sim` and `modding-api-no-isa` closed every IMPORT path by which
+bytecode could reach a save file. The DATA path was untouched: `apps` may import anything,
+`LoadedPack.compiled.program` was a public `Uint8Array`, and `SaveDoc.payload` is an opaque
+`Uint8Array` by design (ADR-0014). Between two correct decisions sat a five-line function that
+writes bytecode into a `.fsav` while no package ever sees an opcode. ADR-0006 said "never written to
+disk", and it was false from the day it was written.
+
+**Decision.** `LoadedPack` no longer carries the program. Compiled output lives in a `WeakMap`
+inside `runtime`, and packs expose `programLength` — metadata, not bytes. When the simulation needs
+the program it crosses into the worker as a `SharedArrayBuffer` through the ADR-0034 boundary, which
+is where it was always going and is not a value anyone can hand to `writeSave`.
+
+**Rejected alternative.** An allowlist of chunk ids in `writeSave`. That is a hand-written list
+guarding a mechanism — the pattern this review has just spent its time removing — and relabelling a
+chunk `grid` defeats it in one word.
+
+**Stated honestly.** `apps` can still build a `Uint8Array` of anything and persist it. What is gone
+is the convenient path where the loader hands you compiled bytecode already shaped like a payload.
+The claim is now "bytecode is not persisted by accident or by convenience", which is true, rather
+than "never", which was not.
+
+**Third instance of one shape.** ADR-0020 corrected ADR-0005 for reachability; ADR-0046 removed a
+privilege whose token was a directory name; this removes a value whose absence is the guarantee.
+Removing the need is not removing the possibility — and an import rule constrains imports, not data.
+
+---
+
+## ADR-0049 — A dependency without an import is a dependency nothing checks
+
+**Context.** dependency-cruiser reasons about resolved import edges. A service locator —
+`(globalThis as unknown as { __bridge?: X }).__bridge` — creates real coupling with no edge, so
+`kernel` can reach `runtime` six ranks down and every generated layer rule stays silent.
+
+**Decision.** Both spellings are lint-banned across `packages/` and `apps/`: the member access on
+`globalThis` and the cast. Two files are exempt and both are already frozen by tests — the runtime
+seal, which must reach globals by string key, and the worker entry, which must find its own scope.
+
+**Caught while writing it.** Only the member-access form was banned at first, and the cast — the one
+anybody would actually write, and the one in the report — went straight through. The ban then caught
+the heap harness reading `(globalThis as { gc?: () => void }).gc`, correctly: the honest way to name
+a global the runtime injects is `declare const gc`, not a cast.
+
+---
+
+## ADR-0050 — Coverage is derived, not remembered
+
+**Context.** Three guardrails had a sound mechanism and a hand-written reach. The heap harness
+imported four hot functions by name, so a fifth was measured by nobody. The `DataOnly` walker
+iterated call signatures, so an exported class — which carries construct signatures — was invisible,
+along with the unconstrained generic its own doc comment predicted. And the loader's `entries`
+option, a mock for filesystem ordering, had become the only path any test took, leaving the real
+`readdir` unsorted and green.
+
+**Decision.** The heap harness derives the set of functions in `hot/` from the directory and fails if
+one is not exercised. The walker follows construct signatures and instance members, and flags a bare
+unconstrained type parameter. The determinism suite has a test that passes no `entries` at all.
+
+**Why this pattern is worse than the first one.** "A guardrail names a mechanism, not a fact" is
+visible once stated: the rule reads like a list and lists are obviously incomplete. This one hides
+behind a mechanism that is genuinely correct — nobody re-reads a walker that works. The tell is the
+same in all three: a literal enumerating what the mechanism applies to.

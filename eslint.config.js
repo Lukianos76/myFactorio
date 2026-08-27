@@ -70,6 +70,11 @@ const ambientSourceProperties = [
   { object: 'performance', property: 'now', message: `performance.now breaks determinism. ${CLOCK}` },
   { object: 'process', property: 'hrtime', message: `process.hrtime breaks determinism. ${CLOCK}` },
   { object: 'process', property: 'uptime', message: `process.uptime breaks determinism. ${CLOCK}` },
+  // A property read, not a call, so replacing functions never reached it.
+  { property: 'timeOrigin', message: `performance.timeOrigin breaks determinism. ${CLOCK}` },
+  // Catches `const D = Date; new D().getTime()`, where the alias hides the constructor from the
+  // NewExpression selector below. The seal covers it at run time; this is the editor-speed signal.
+  { property: 'getTime', message: `reading a Date breaks determinism. ${CLOCK}` },
   {
     property: 'localeCompare',
     // The previous wording ended "...or an Intl.Collator pinned to a fixed locale", and a reader in
@@ -129,7 +134,7 @@ const CONTENT_ID_CAST =
   'branded type and no syntactic rule can see it. The guarantee is that every point where an id ' +
   'enters from outside parses it. See ADR-0037.';
 
-const alwaysSyntax = [
+const contentIdSyntax = [
   {
     selector: "TSAsExpression > TSTypeReference > Identifier[name='ContentId']",
     message: CONTENT_ID_CAST,
@@ -140,7 +145,42 @@ const alwaysSyntax = [
     selector: "TSTypeAssertion > TSTypeReference > Identifier[name='ContentId']",
     message: CONTENT_ID_CAST,
   },
+  {
+    // `type Cid = ContentId` then `'sand' as Cid`. The alias renames the brand out of both
+    // selectors above. Banning the alias is not the same as banning the laundering - a generic
+    // helper still gets through, and ADR-0037 says so - but it closes the form someone reaches for
+    // first, and it costs one line.
+    selector: "TSTypeAliasDeclaration > TSTypeReference > Identifier[name='ContentId']",
+    message:
+      'Do not alias ContentId. An alias renames the brand out of the cast rules, which is the ' +
+      'shortest route to a forged id. Use ContentId directly.',
+  },
 ];
+
+/**
+ * A service locator on globalThis is a dependency with no import.
+ *
+ * dependency-cruiser reasons about resolved import edges: no file, no edge, no rule. So `kernel`
+ * can reach `runtime` six ranks down and every layer rule stays silent. Both spellings are here
+ * because only the first was, and the one that was missing is the one anybody would actually
+ * write - `(globalThis as unknown as { __bridge?: X }).__bridge`. See ADR-0049.
+ */
+const globalThisSyntax = [
+  {
+    selector: "MemberExpression[object.name='globalThis']",
+    message:
+      'Reaching through globalThis is a dependency with no import, and the layer rules only see ' +
+      'imports. If two packages need to share something, that is a package.',
+  },
+  {
+    selector: "TSAsExpression > Identifier[name='globalThis']",
+    message:
+      'Casting globalThis is the service-locator spelling: a dependency the graph cannot see. If ' +
+      'two packages need to share something, that is a package.',
+  },
+];
+
+const alwaysSyntax = [...contentIdSyntax, ...globalThisSyntax];
 
 export default tseslint.config(
   {
@@ -255,6 +295,16 @@ export default tseslint.config(
     languageOptions: {
       sourceType: 'commonjs',
       globals: { module: 'writable', require: 'readonly', __dirname: 'readonly' },
+    },
+  },
+  {
+    // The two files that legitimately reach globals by string key: the runtime seal, whose export
+    // list is frozen by a test, and the worker entry, which must find its own scope. They keep every
+    // other shared selector - flat config replaces rather than merges, and dropping the ContentId
+    // ban here would be ADR-0021 for the third time.
+    files: ['packages/sim/src/determinism.ts', 'packages/sim/src/worker/worker.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', ...contentIdSyntax, ...ambientSourceSyntax],
     },
   },
   {

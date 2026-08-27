@@ -28,6 +28,9 @@ const ALIASES: readonly (readonly [label: string, code: string])[] = [
   ['reflected', 'Reflect.get(Math, "random")()'],
   ['Date.now', 'Date.now()'],
   ['crypto.getRandomValues', 'crypto.getRandomValues(new Uint32Array(1))'],
+  ['aliased constructor', 'const D = Date; new D().getTime()'],
+  ['new Date directly', 'new Date().getTime()'],
+  ['performance.timeOrigin', 'void performance.timeOrigin'],
   ['putting the original back', 'Math.random = () => 0.5; Math.random()'],
 ];
 

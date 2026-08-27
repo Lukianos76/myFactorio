@@ -29,6 +29,15 @@ describe('invariant: the root CLAUDE.md does not dilute', () => {
     expect(lines.length).toBeLessThanOrEqual(50);
   });
 
+  it('stays under 2,600 bytes as well', () => {
+    // The line cap counts newlines, and the pressure it describes acts on CONTENT: 39 lines went
+    // from 2,215 bytes to 5,375 during review without adding a single line. Detail that used to
+    // live in a per-package CLAUDE.md, restated here at length, is exactly the dilution the cap
+    // exists to prevent, and it fits comfortably inside the line budget.
+    const bytes = Buffer.byteLength(readFileSync(path.join(repoRoot, 'CLAUDE.md'), 'utf8'), 'utf8');
+    expect(bytes, `CLAUDE.md is ${bytes} bytes`).toBeLessThanOrEqual(2_600);
+  });
+
   it('every package documents what it owns and what it must never do', () => {
     for (const name of PACKAGES) {
       const file = path.join(repoRoot, 'packages', name, 'CLAUDE.md');
@@ -190,13 +199,49 @@ describe('invariant: no sim API accepts a function', () => {
 
     const offenders: string[] = [];
 
+    /**
+     * Two shapes used to walk straight past this.
+     *
+     * A class carries CONSTRUCT signatures, not call signatures, so the loop below never ran for
+     * one and none of its methods were ever visited: `export class Ticker { onCell(cb) {} }` was
+     * invisible. And an unconstrained type parameter - `withWorld<T>(world, extra: T)` - has no
+     * call signature and no properties, so it looked like data while accepting anything at all.
+     * The second case was named in this test's own doc comment and not covered by it, which is the
+     * form of gap this repository keeps finding: a sound mechanism with a hand-written reach.
+     */
+    function checkSignature(owner: string, signature: ts.Signature): void {
+      for (const parameter of signature.getParameters()) {
+        const paramType = checker.getTypeOfSymbolAtLocation(parameter, source!);
+
+        // A bare `T` with no constraint accepts a function as readily as anything else. Generic
+        // parameters whose type is a construction over T - TransferSafe<T> and friends - are not
+        // flagged: those resolve through the type alias, which is where the constraint lives.
+        if (paramType.flags & ts.TypeFlags.TypeParameter && paramType.getConstraint() === undefined) {
+          offenders.push(`${owner}(${parameter.getName()}: unconstrained generic)`);
+          continue;
+        }
+        if (typeTakesCallable(checker, paramType, new Set())) {
+          offenders.push(`${owner}(${parameter.getName()})`);
+        }
+      }
+    }
+
     for (const exported of checker.getExportsOfModule(moduleSymbol)) {
+      const name = exported.getName();
       const declared = checker.getTypeOfSymbolAtLocation(exported, source);
-      for (const signature of declared.getCallSignatures()) {
-        for (const parameter of signature.getParameters()) {
-          const paramType = checker.getTypeOfSymbolAtLocation(parameter, source);
-          if (typeTakesCallable(checker, paramType, new Set())) {
-            offenders.push(`${exported.getName()}(${parameter.getName()})`);
+
+      for (const signature of declared.getCallSignatures()) checkSignature(name, signature);
+
+      for (const construct of declared.getConstructSignatures()) {
+        checkSignature(`new ${name}`, construct);
+
+        // Everything the instance offers is part of the surface a caller reaches.
+        for (const member of construct.getReturnType().getProperties()) {
+          const declaration = member.getDeclarations()?.[0];
+          if (declaration === undefined) continue;
+          const memberType = checker.getTypeOfSymbolAtLocation(member, declaration);
+          for (const method of memberType.getCallSignatures()) {
+            checkSignature(`${name}#${member.getName()}`, method);
           }
         }
       }

@@ -1,5 +1,35 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { copyRegion, countValue, fillRegion, findFirst } from '@myfactorio/sim';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+/**
+ * Which functions this file exercises, derived from the directory rather than remembered.
+ *
+ * The mechanism below is sound and its reach was a hand-written import list, so a new hot function
+ * was measured by nobody: one with a `subarray` per cell was added during review and passed. That is
+ * the quieter version of the failure this repository keeps finding — not a broken instrument, a
+ * correct instrument pointed at a list somebody has to maintain.
+ *
+ * Arities differ, so the calls below cannot be generated. What can be generated is the set of names
+ * that must appear in them, and omitting one is now a failure rather than an oversight.
+ */
+function hotExports(): string[] {
+  const hotDir = path.join(repoRoot, 'packages/sim/src/hot');
+  return readdirSync(hotDir)
+    .filter((file) => file.endsWith('.ts') && !file.includes('.test.'))
+    .flatMap((file) => [
+      ...readFileSync(path.join(hotDir, file), 'utf8').matchAll(/^export function (\w+)/gm),
+    ])
+    .map((match) => match[1]!)
+    .sort();
+}
+
+/** Every hot function called in the measurement below. Kept honest by the test at the end. */
+const EXERCISED = ['copyRegion', 'countValue', 'fillRegion', 'findFirst'] as const;
 
 /**
  * Invariant 5, measured rather than described.
@@ -51,7 +81,9 @@ const ALLOCATION_BUDGET = 50_000;
 /** Retains what the control allocates, so the measurement cannot be undone by a collection. */
 const sink: unknown[] = [];
 
-const gc = (globalThis as { gc?: () => void }).gc;
+// Declared rather than fished out of globalThis. The service-locator ban caught this line, and it
+// was right to: the honest way to name a global the runtime injects is to declare it.
+declare const gc: (() => void) | undefined;
 
 function heapGrowth(run: () => void): number {
   if (gc === undefined) throw new Error('run under --expose-gc; see vitest.config.ts');
@@ -95,6 +127,11 @@ describe('invariant: the hot path allocates nothing', () => {
   });
 
   sink.length = 0;
+
+  it('measures every function in hot/, not a list somebody remembered to update', () => {
+    // A new hot function that nobody adds to EXERCISED fails here instead of going unmeasured.
+    expect(hotExports()).toEqual([...EXERCISED].sort());
+  });
 
   it('the instrument can detect allocation at all', () => {
     expect(control, `control grew the heap by ${control} bytes`).toBeGreaterThan(1_000_000);

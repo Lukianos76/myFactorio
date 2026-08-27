@@ -6,4 +6,5 @@ export {
   type LoadErrorCode,
   PACK_MANIFEST_FILE,
   loadPacks,
+  programInstructionCount,
 } from './loader.js';
