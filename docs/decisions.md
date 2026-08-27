@@ -491,3 +491,59 @@ the e2e needs a display. Different cadences, different jobs.
 **Unverified.** The workflow has never run. Its YAML parses and `pnpm install --frozen-lockfile`
 succeeds locally, and that is the whole of the evidence — the first push is the real test. Written
 down here rather than implied, because "CI exists" and "CI passes" are different claims.
+
+---
+
+## ADR-0029 — The guardrail verifier runs in a throwaway worktree
+
+**Context.** `verify-guardrails.mjs` edited the working tree in place. That demanded a clean tree,
+made concurrent work impossible, and left the repository broken on Ctrl-C. It also clobbered a
+reviewer's files mid-review, which is how the cost became concrete rather than theoretical.
+
+**Decision.** It creates a detached `git worktree` from HEAD, carries uncommitted changes across
+with `git diff HEAD | git apply`, installs dependencies there, runs every case, and removes the
+worktree. Isolation also removes the clean-tree precondition: what gets verified is what you have,
+not what you committed. Measured: 59 s end to end, 23/23.
+
+**Rejected alternative.** Keeping in-place edits and asking people to be careful. The whole premise
+of this repository is that care is not a mechanism.
+
+**Known limit, stated rather than implied.** Untracked files are invisible to `git diff HEAD`, so a
+brand new file is not carried over. The script reports how many it skipped at startup.
+
+---
+
+## ADR-0030 — A command exiting 0 is not evidence that it did the thing
+
+**Context.** Four instances in one session. `dependency-cruiser`'s API builds the graph without
+evaluating rules unless `validate: true`, so an assertion about violations passed vacuously.
+`git status --porcelain` exits 0 whether or not it prints anything, so a CI step checking for a
+dirty tree could never fail. `git worktree remove --force` exits 0 having left `node_modules`
+behind, so cleanup leaked a directory per run while reporting success. And
+`z.toJSONSchema(..., { unrepresentable: 'throw' })` does not throw on a `.refine()`, so the
+proposed fix for a schema gap would not have closed it.
+
+**Decision.** For any cleanup or check whose failure would be silent, assert the *state*, not the
+exit code. The verifier now calls `existsSync` on the worktree and exits non-zero if it survives;
+the CI step tests the output of `git status`, not its status code.
+
+**Rejected alternative.** Treating each of these as a separate bug. They are one habit — trusting a
+tool's report over the world it was supposed to change — and the audit that found them found them
+by looking at the world.
+
+---
+
+## ADR-0031 — Source edits go through a tool that fails loudly
+
+**Context.** Four scripted string-replacements failed silently this session while printing a success
+message. Two were caught because the code stopped working. The third produced
+`verify-guardrails` case 2, which asserted on a rule name that does not exist and therefore passed
+on the bare word "error" — a guardrail case that could not fail, counted in the score for two
+sessions. The fourth silently dropped a one-line change.
+
+**Decision.** Edits to existing files use an exact-match edit that errors when the pattern is not
+found. Scripted `replace()` calls are not used for source changes.
+
+**Rejected alternative.** Being more careful, or verifying each replacement afterwards. The failure
+mode is precisely that verification gets skipped when the tool says it succeeded. This is ADR-0030
+applied to my own tooling.
