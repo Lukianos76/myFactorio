@@ -1,6 +1,16 @@
 {
   "extends": "./tsconfig.base.json",
-  "include": ["packages/*/src/**/*.ts", "apps/*/src/**/*.ts", "tests/*.ts", "tools/**/*.ts"],
+  "include": [
+    "packages/*/src/**/*.ts",
+    "apps/*/src/**/*.ts",
+    // packs/ is in the program on purpose. core-empty exists to dogfood exactly what a third-party
+    // mod gets (ADR-0012), and until this line nothing a mod author wrote there was typechecked,
+    // linted or cruised - the one place whose whole purpose is to be representative was the one
+    // place with no coverage at all.
+    "packs/*/src/**/*.ts",
+    "tests/*.ts",
+    "tools/**/*.ts"
+  ],
   "exclude": ["**/node_modules", "**/dist", "tests/fixtures/**"],
   "compilerOptions": {
     "types": ["node"]

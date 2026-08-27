@@ -10,7 +10,9 @@
 - Be published before 1.0. `private: true`, version `0.x`, **no stability guarantee**. It exists so
   `packs/core-empty` dogfoods exactly what a third-party mod gets — not to stake a claim on a name
   (ADR-0012). Freezing an API validated by zero real usage is immediate debt.
-- Re-export `isa` or `save`. Bytecode encoding is disposable only because nothing outside the build
+- Re-export `isa` or `save` (`modding-api-no-isa`, `modding-api-no-save`). This package sits at the
+  bottom rank, so it may import anything and only these rules stop it.
+  Bytecode encoding is disposable only because nothing outside the build
   depends on it, and a mod importing an opcode would make that false. Save container internals are
   not a mod author's business either (ADR-0013).
 - Contain logic. Re-exports, types and validators. Anything else belongs in the package that owns it.

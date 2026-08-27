@@ -421,3 +421,73 @@ prints that and quits. A 20-second timeout in main prints `renderer-timeout` and
 machine and turns into a flaky test on a slower one, which is worse than no test — a harness that
 fails intermittently gets muted rather than fixed. A timeout that reports a distinct failure line is
 legible; hanging is not.
+
+---
+
+## ADR-0026 — Written prohibitions are an executable specification
+
+**Context.** ADR-0020 diagnosed a general shape — the layer ranks permit an edge that the doctrine
+forbids, so the generated rules never look at it — and then closed exactly one instance of it. An
+adversarial review found two more sitting in the CLAUDE.md files the whole time: `save` must never
+import `sim` (ADR-0014 devotes a whole entry to it), and `modding-api` must never re-export `isa` or
+`save` (ADR-0013). Both are upward edges. Neither had a rule.
+
+**Decision.** `save-no-sim`, `modding-api-no-isa` and `modding-api-no-save` exist. More importantly,
+`tests/doctrine.invariant.test.ts` parses the `## Must never` section of every package, extracts
+each stated import or re-export prohibition, and requires a dependency-cruiser rule whose path
+predicates actually match that edge. Writing "Must never import X" without a rule behind it now
+turns the suite red.
+
+**Rejected alternative.** Adding the three rules and moving on, which is what ADR-0020 did with the
+first one. Fixing instances of a class I had just finished naming is how the second and third
+instances survived. The gap was even legible in the prose: prohibitions that cited a rule in
+parentheses had one, prohibitions that cited none had none.
+
+**Why the test checks the predicate, not the name.** A rule named `save-no-sim` whose regex matched
+nothing would satisfy a name check and refuse nothing — the same vacuity that made
+`verify-guardrails` case 2 pass on the word "error".
+
+**Known limit.** It reads the first sentence of each bullet. A prohibition phrased in a way the
+parser does not recognise is silently not checked, so the test asserts the exact set of prohibitions
+it found: a parser regression fails loudly instead of quietly finding nothing.
+
+---
+
+## ADR-0027 — Test files are cruised, and packs are typechecked
+
+**Context.** `.dependency-cruiser.cjs` excluded `*.test.ts`, and the TypeScript program excluded
+`packs/`. So `packages/kernel/src/scratch.test.ts` importing `runtime` passed the entire check —
+arch never opened the file, `tsc` compiled it, vitest ran it green. The same hole made
+`packs-only-modding-api` and `sim-no-compiler` optional. Separately, `packs/core-empty` exists to
+dogfood exactly what a third-party mod gets (ADR-0012), and nothing a mod author wrote there was
+typechecked, linted or cruised.
+
+**Decision.** Drop the test-file exclusion; add `packs/*/src/**/*.ts` to the program. Measured: the
+cruise went from 35 modules to 47, a forbidden import inside a `.test.ts` is now reported as
+`no-import-below:kernel`, and a type error inside a content pack fails `pnpm typecheck`.
+
+**Rejected alternative.** Keeping tests out on the grounds that test code is not shipped. Test code
+imports production code, and a layering that stops at the test boundary is a layering with a
+documented way around it. Nothing in the real suite needed the exemption — it was never load-bearing,
+only unexamined.
+
+---
+
+## ADR-0028 — Continuous integration
+
+**Context.** The project's thesis is "mechanical, never merely documented", and every guardrail
+depended on a human remembering to type a command. `pnpm check` did not include
+`verify:guardrails` or `e2e:no-core` either. The thesis was a documentation claim about itself.
+
+**Decision.** `.github/workflows/ci.yml`, three jobs matching the three levels of proof: `check`
+(the rules hold on this tree), `guardrails` (the rules still refuse a deliberate violation, followed
+by a step asserting the verifier restored every file it touched), `e2e` (the application actually
+runs, under xvfb).
+
+**Rejected alternative.** Folding everything into `pnpm check`. The 30-second budget exists so the
+local loop stays worth running; `verify:guardrails` takes minutes and edits the working tree, and
+the e2e needs a display. Different cadences, different jobs.
+
+**Unverified.** The workflow has never run. Its YAML parses and `pnpm install --frozen-lockfile`
+succeeds locally, and that is the whole of the evidence — the first push is the real test. Written
+down here rather than implied, because "CI exists" and "CI passes" are different claims.

@@ -1,0 +1,93 @@
+name: ci
+
+# The project's whole thesis is "mechanical, never merely documented". Until this file existed,
+# every guardrail depended on a human remembering to type a command - which made the thesis a
+# documentation claim about itself. The three jobs below are the three levels of proof:
+#   check       the rules hold on this tree
+#   guardrails  the rules still refuse a deliberate violation
+#   e2e         the application actually runs
+# Each is a separate job so a failure names which level broke.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  check:
+    name: check (typecheck, lint, arch, schema, tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run check
+
+  guardrails:
+    name: guardrails (break each rule, expect a refusal)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # verify-guardrails edits files in place and refuses to start on a dirty tree. A fresh
+      # checkout is clean, and the runner is disposable, so this is the one environment where
+      # editing the working tree costs nothing.
+      - run: pnpm run verify:guardrails
+
+      # It restores every file it touches. If it did not, this is the evidence.
+      # `git status --porcelain` exits 0 whether or not it prints anything, so testing its OUTPUT is
+      # the only version of this step that can fail. The obvious spelling is a no-op.
+      - name: the verifier left the tree as it found it
+        run: |
+          git diff --exit-code
+          leftover="$(git status --porcelain --untracked-files=all)"
+          if [ -n "$leftover" ]; then
+            echo "verify-guardrails did not restore the tree:"
+            echo "$leftover"
+            exit 1
+          fi
+
+  e2e:
+    name: e2e (real Electron, real empty content directory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Electron needs a display and the Chromium sandbox needs user namespaces, neither of which
+      # a headless runner provides by default.
+      - name: install a display and Electron's runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgtk-3-0 libnss3
+          # Renamed in Ubuntu 24.04; a missing package would fail the whole apt-get call.
+          sudo apt-get install -y libasound2t64 || sudo apt-get install -y libasound2
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      - run: xvfb-run --auto-servernum pnpm run e2e:no-core

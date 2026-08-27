@@ -66,6 +66,37 @@ module.exports = {
       to: { path: pkg('rules-compiler') },
     },
     {
+      name: 'save-no-sim',
+      severity: 'error',
+      comment:
+        'packages/save must not import packages/sim. The ranks permit it - sim sits ABOVE save - ' +
+        'so the generated layer rules never look at this edge. Chunk payloads are opaque byte ' +
+        'ranges; coupling the file format to the in-memory layout turns every change to the ' +
+        "simulation's typed-array packing into a save migration. See ADR-0014, ADR-0026.",
+      from: { path: pkg('save') },
+      to: { path: pkg('sim') },
+    },
+    {
+      name: 'modding-api-no-isa',
+      severity: 'error',
+      comment:
+        'modding-api must not re-export the instruction set. The ISA is disposable only because ' +
+        'nothing outside the build depends on it (ADR-0006); the moment a mod imports an opcode ' +
+        'that stops being true and the encoding is frozen retroactively. See ADR-0013, ADR-0026.',
+      from: { path: pkg('modding-api') },
+      to: { path: pkg('isa') },
+    },
+    {
+      name: 'modding-api-no-save',
+      severity: 'error',
+      comment:
+        'modding-api must not re-export the save container. Save internals are not a mod author ' +
+        'surface; exposing them makes the container format a public contract by accident. ' +
+        'See ADR-0013, ADR-0026.',
+      from: { path: pkg('modding-api') },
+      to: { path: pkg('save') },
+    },
+    {
       name: 'packs-only-modding-api',
       severity: 'error',
       comment:
@@ -110,7 +141,11 @@ module.exports = {
   options: {
     doNotFollow: { path: 'node_modules' },
     exclude: {
-      path: '(^|/)(node_modules|dist|out)/|(^|/)tests/fixtures/|[.]test[.]ts$',
+      // Test files are NOT excluded, deliberately. They were, and that made every layer rule
+      // optional: `packages/kernel/src/scratch.test.ts` importing runtime passed the whole check,
+      // because arch never opened the file while tsc compiled it and vitest ran it. A rule that
+      // stops at the test boundary is a rule with a documented way around it.
+      path: '(^|/)(node_modules|dist|out)/|(^|/)tests/fixtures/',
     },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: 'tsconfig.json' },
