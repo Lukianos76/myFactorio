@@ -4,50 +4,50 @@
 
 **Where we are.** The skeleton and its guardrails, and nothing else. Eight packages, an Electron
 shell, an empty base content pack, four scripts in `tools/`. No gameplay: no rendering, no elements,
-no game loop, no opcode that expresses a rule of play. Current, measured, on `main` at
+no game loop, no opcode that expresses a rule of play. Measured on `main` at
 github.com/Lukianos76/myFactorio:
 
 ```
-pnpm check          14.0 s   144 tests, 56 modules cruised, 17 dependency rules
-pnpm verify:guardrails  31/31   in an isolated worktree, ~60 s
-pnpm e2e:no-core        11/11   real Electron, both paths
-docs/decisions.md       46 ADRs
-CI                      green   check 31s · e2e 30s · guardrails 1m20s
+pnpm check              14.2 s   195 tests, 57 modules cruised, 17 dependency rules
+pnpm verify:guardrails  47/47    isolated worktree, ~60 s, 10 tools proved green first
+pnpm e2e:no-core        11/11    real Electron, both paths, green on Linux under xvfb in CI
+CI                      green    check · guardrails · e2e, every push
+docs/decisions.md       54 ADRs
 ```
 
-The CI has now run. All three jobs passed on the first push, and the e2e passed on Linux under
-xvfb — cross-origin isolation, the worker booting over the `SharedArrayBuffer` and the integer
-round-trip had only ever been observed on Windows before. The guardrails job also confirms the
-verifier restores everything it touches, on a machine that has never seen this repository.
+**The original brief is met.** Every invariant is enforced by a tool, the four requested tests went
+red before green in checkable commits, and breaking any rule produces a named refusal —
+`pnpm verify:guardrails` does exactly that, 47 times, and CI replays it on every push.
 
-**What the adversarial review changed.** Two rounds of review broke the guardrails rather than
-reading them, and found 24 bypasses that passed `pnpm check`. The pattern behind almost all of them:
-*a guardrail names a mechanism, and the invariant is always wider than the mechanism, so the door
-that gets used is the one the list does not name.* `Math.random` was banned and
-`crypto.getRandomValues` was not. `save` could not import `isa` but `apps` could write the bytecode.
-"Hot" was a folder name, so the allocation moved one folder up. Four guardrails were rebuilt to
-constrain the fact instead of the syntax: `SimPort` closes the worker channel rather than guarding
-it, `sealAmbientSources()` replaces the functions themselves, hot-path allocation is measured
-against a negative control, and the `ContentId` brand is now documented as the speed bump it is
-rather than the wall it was claimed to be. The reserved namespace was deleted outright — its
-authorisation token was a directory name, so it protected nothing; a collision is now the ordinary
-duplicate check, and the guarantee comes from the absence of a mechanism.
+**What four adversarial review rounds did to it.** The reviewer broke the guardrails instead of
+reading them, and one lesson arrived in four costumes: *the mechanism names something narrower than
+the invariant.* First a function name — `Math.random` banned, `crypto.getRandomValues` not. Then a
+hand-written list — four imports in the heap harness, so a fifth hot function was measured by
+nobody. Then a directory name, which ADR-0036 itself calls not a property of the code. Then the
+quietest one: replacing a mechanism with a better one is a change of reach, and a change of reach
+can lose ground — deriving hot coverage from sim's exports silently dropped what deriving it from
+`hot/` had caught (ADR-0052). Four guardrails were rebuilt to constrain the fact rather than the
+spelling: `SimPort` closes the worker channel, `sealAmbientSources()` replaces the functions
+themselves, hot-path allocation is measured against a negative control, and invariant 4 is one
+reachability walk instead of a branch per demonstrated shape. Three claims that were plausible,
+documented and false are corrected in place by superseding entries (ADR-0020, ADR-0046, ADR-0048).
 
-**What kept going wrong, and is now mechanical.** Three claims in the docs were plausible and false
-until someone broke a rule (ADR-0020, ADR-0022, ADR-0026), so `tests/doctrine.invariant.test.ts`
-turns every `## Must never` line into an executable requirement. `pnpm check` ran only when a human
-typed it, so there is CI. `verify-guardrails` edited the working tree and clobbered a reviewer
-mid-review, so it runs in a throwaway worktree. Four scripted edits failed silently while printing
-success — one of them produced a verifier case that could not fail and sat in the score for two
-sessions (ADR-0031). And "exit 0" was taken as proof four separate times: dependency-cruiser's API
-needs `validate: true`, `git status --porcelain` always exits 0, `git worktree remove` leaves
-`node_modules`, `unrepresentable: 'throw'` does not throw on `.refine()` (ADR-0030).
+**What kept going wrong on my side, and is now mechanical.** Four scripted edits failed silently
+while printing success — one produced a verifier case that could not fail and sat in the score for
+two sessions (ADR-0031), so a stale anchor is now reported as one. "Exit 0" was taken as proof four
+separate times: dependency-cruiser needs `validate: true`, `git status --porcelain` always exits 0,
+`git worktree remove` leaves `node_modules`, `unrepresentable: 'throw'` does not throw on `.refine()`
+(ADR-0030). And a deleted attack case used to change only the denominator; it now fails a test
+(ADR-0054).
 
-**Open.** Known and deliberate gaps: no seeded PRNG, so `sim` has no randomness at all by design
-(ADR-0011); a generic
-`brand<T>()` helper still launders any string into a `ContentId` and no syntactic rule can see it
-(ADR-0037); `const M = Math` passes the lint, which is why the runtime seal exists; plain `+` string
-concatenation escapes the hot-path lint, though the heap measurement catches it in volume.
-`apps/` is covered only by the e2e. The natural next milestone is the first real element, which
-forces the PRNG decision and the question of what a rule schema needs beyond an id and a constant
-pool.
+**Open, and deliberately so.** A generic `brand<T>()` still launders any string into a `ContentId`
+and no syntactic rule can see it (ADR-0037). The seal has an ordering dependency: an alias taken
+before `sealAmbientSources()` runs survives it. `const M = Math` passes the lint, which is why the
+runtime seal exists. Plain `+` concatenation escapes the hot-path lint, though the heap measurement
+catches it in volume. A second enumeration site in the loader, concatenated unsorted, has no fixture
+that reaches it. `apps/` is covered only by the e2e. And ADR-0051 states the limit that matters: no
+mechanism here derives the verifier's own case list — somebody decides what to try, and "fixed" is
+the state where the next edge has not been touched yet, not a terminal one.
+
+**Next.** The first real element. It forces the seeded-PRNG decision that ADR-0011 deferred, and the
+question of what a rule schema needs beyond an id and a constant pool.
