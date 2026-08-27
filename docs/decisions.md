@@ -961,3 +961,40 @@ unconstrained type parameter. The determinism suite has a test that passes no `e
 visible once stated: the rule reads like a list and lists are obviously incomplete. This one hides
 behind a mechanism that is genuinely correct — nobody re-reads a walker that works. The tell is the
 same in all three: a literal enumerating what the mechanism applies to.
+
+---
+
+## ADR-0051 — Falsify the mechanism, not only the code it guards
+
+**Context.** Three review rounds produced one lesson in three costumes. A guardrail named
+`Math.random` and not the class "ambient randomness". Coverage was a hand-written import list, then
+a directory name — which ADR-0036 itself calls "not a property of the code". And a test written to
+close a mock problem asserted load order, which the topological tie-break already guarantees, so the
+pre-sort it was meant to cover could be *reversed* with twenty-nine tests still green.
+
+Each fix was better than the last and each stopped at the edge of the report that prompted it. As
+long as coverage is derived from a list of findings, "it is fixed" means "the named forms are
+fixed".
+
+**Decision, where derivation is possible.** Derive from a property of the code rather than from a
+list. The `DataOnly` walker is now one reachability recursion — signatures, construct signatures,
+properties, union members, type arguments — instead of four branches added one demonstration at a
+time; object literals, nested objects, arrays of records and Map values all close together. Hot-path
+coverage derives from what `sim` exports: every exported callable is exercised or declared cold with
+a reason, so moving a function between directories changes nothing.
+
+**Decision, where it is not.** `verify-guardrails` mutates the code a guardrail protects. The
+complementary move is to mutate the guardrail's own mechanism and require the suite to go red —
+deletion and inversion are different failures, and the pre-sort survived deletion-testing while
+being replaceable by its own reverse. Those mutations are now cases in their own right.
+
+**Stated plainly, because pretending otherwise is the failure mode.** The verifier's case list is
+itself hand-written, and no mechanism in this repository derives it. Somebody decides what to try.
+What can be improved is the cost of trying, so the next reviewer's probes become permanent cases
+cheaply — which is what every round has actually done. "Fixed" is not a terminal state; it is the
+state where the next edge has not been touched yet.
+
+**Still open, and deliberately so.** The seal has an ordering dependency: an alias taken before
+`sealAmbientSources()` runs, or a `.constructor` from an instance created earlier, survives.
+Documented, not mechanised. The generic `brand<T>()` launderer stands (ADR-0037). A hot function
+`sim` does not export is outside the derived set, and is measured through whatever calls it.

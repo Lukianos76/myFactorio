@@ -200,14 +200,20 @@ describe('invariant: no sim API accepts a function', () => {
     const offenders: string[] = [];
 
     /**
-     * Two shapes used to walk straight past this.
+     * ONE recursion over everything reachable, rather than a list of shapes.
      *
-     * A class carries CONSTRUCT signatures, not call signatures, so the loop below never ran for
-     * one and none of its methods were ever visited: `export class Ticker { onCell(cb) {} }` was
-     * invisible. And an unconstrained type parameter - `withWorld<T>(world, extra: T)` - has no
-     * call signature and no properties, so it looked like data while accepting anything at all.
-     * The second case was named in this test's own doc comment and not covered by it, which is the
-     * form of gap this repository keeps finding: a sound mechanism with a hand-written reach.
+     * The previous version enumerated: call signatures, then construct signatures, then the members
+     * of a constructor's return type. Each was added the day someone demonstrated the shape it
+     * missed — a plain function, then a class, then a class's methods. An object literal with a
+     * method has neither call nor construct signatures, so both loops were skipped entirely and
+     * `export const hooks = { register(cb) {} }` was never visited at all.
+     *
+     * Adding a fourth branch would close that one form and leave the next: a nested object, an
+     * array of handler records, a namespace object of namespace objects. The invariant is "no
+     * callable is reachable from sim's public surface", so the walk has to be a reachability walk.
+     * It descends through anything this repository declares — properties, unions, array elements —
+     * and checks every signature it meets, wherever it lives. Standard-library shapes are not
+     * followed, for the reason typeTakesCallable already gives.
      */
     function checkSignature(owner: string, signature: ts.Signature): void {
       for (const parameter of signature.getParameters()) {
@@ -226,25 +232,51 @@ describe('invariant: no sim API accepts a function', () => {
       }
     }
 
-    for (const exported of checker.getExportsOfModule(moduleSymbol)) {
-      const name = exported.getName();
-      const declared = checker.getTypeOfSymbolAtLocation(exported, source);
+    function walkSurface(owner: string, type: ts.Type, seen: Set<ts.Type>): void {
+      if (seen.has(type)) return;
+      seen.add(type);
 
-      for (const signature of declared.getCallSignatures()) checkSignature(name, signature);
+      for (const signature of type.getCallSignatures()) checkSignature(owner, signature);
 
-      for (const construct of declared.getConstructSignatures()) {
-        checkSignature(`new ${name}`, construct);
+      for (const construct of type.getConstructSignatures()) {
+        checkSignature(`new ${owner}`, construct);
+        walkSurface(`${owner}#`, construct.getReturnType(), seen);
+      }
 
-        // Everything the instance offers is part of the surface a caller reaches.
-        for (const member of construct.getReturnType().getProperties()) {
-          const declaration = member.getDeclarations()?.[0];
-          if (declaration === undefined) continue;
-          const memberType = checker.getTypeOfSymbolAtLocation(member, declaration);
-          for (const method of memberType.getCallSignatures()) {
-            checkSignature(`${name}#${member.getName()}`, method);
-          }
+      if (type.isUnionOrIntersection()) {
+        for (const member of type.types) walkSurface(owner, member, seen);
+        return;
+      }
+
+      // Type arguments, not "array elements". `{ on(cb) }[]` escaped a walk that followed
+      // properties only, because an array's own members belong to the standard library and are
+      // skipped, so the element type was never reached. Following arguments generally covers
+      // arrays, ReadonlyArray, Map, Promise and any generic this repository writes later — the
+      // class of containers rather than the one that was demonstrated.
+      if ((type.flags & ts.TypeFlags.Object) !== 0) {
+        for (const argument of checker.getTypeArguments(type as ts.TypeReference)) {
+          walkSurface(`${owner}[]`, argument, seen);
         }
       }
+
+      for (const property of type.getProperties()) {
+        const declaration = property.getDeclarations()?.[0];
+        if (declaration === undefined) continue;
+
+        // Only what this repository declares. A typed array's own methods are its business.
+        const file = declaration.getSourceFile().fileName;
+        if (!file.includes('/packages/') || file.includes('/node_modules/')) continue;
+
+        walkSurface(
+          `${owner}${owner.endsWith('#') ? '' : '.'}${property.getName()}`,
+          checker.getTypeOfSymbolAtLocation(property, declaration),
+          seen,
+        );
+      }
+    }
+
+    for (const exported of checker.getExportsOfModule(moduleSymbol)) {
+      walkSurface(exported.getName(), checker.getTypeOfSymbolAtLocation(exported, source), new Set());
     }
 
     expect(offenders).toEqual([]);

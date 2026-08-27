@@ -196,9 +196,13 @@ const CASES = [
           `${s}\nexport function scanRegion(cells: Uint16Array, from: number): number {\n` +
           '  return cells[from] ?? 0;\n}\n',
       ],
+      // Exported, because coverage derives from what sim exports rather than from the directory.
+      // An unexported hot function is unreachable from outside the package, and whatever calls it
+      // is measured with its allocations included - so the export set is the right boundary.
+      ['packages/sim/src/index.ts', (s) => s.replace('  findFirst,', '  findFirst,\n  scanRegion,')],
     ],
     tool: 'pnpm vitest run tests/hot-allocation',
-    expect: /not a list somebody remembered/,
+    expect: /accounts for every callable/,
   },
   {
     invariant: 'Meta',
@@ -383,6 +387,63 @@ const CASES = [
     ],
     tool: 'pnpm vitest run tests/guardrails',
     expect: /laundering service|exports exactly what it is meant to/,
+  },
+  {
+    invariant: '4',
+    breaks: 'a callback on an exported OBJECT LITERAL, which has neither call nor construct signatures',
+    edits: [
+      [
+        'packages/sim/src/world.ts',
+        (s) => `${s}\nexport const hooks = {\n  register(handler: (index: number) => void): void {\n    handler(0);\n  },\n};\n`,
+      ],
+      ['packages/sim/src/index.ts', (s) => s.replace('  viewWorld,', '  viewWorld,\n  hooks,')],
+    ],
+    tool: 'pnpm vitest run tests/guardrails',
+    expect: /hooks/,
+  },
+  {
+    invariant: '4',
+    breaks: 'a callback inside an ARRAY of records, reached only through type arguments',
+    edits: [
+      [
+        'packages/sim/src/world.ts',
+        (s) => `${s}\nexport const handlers = [{ on(handler: (index: number) => void): void { handler(0); } }];\n`,
+      ],
+      ['packages/sim/src/index.ts', (s) => s.replace('  viewWorld,', '  viewWorld,\n  handlers,')],
+    ],
+    tool: 'pnpm vitest run tests/guardrails',
+    expect: /handlers/,
+  },
+  {
+    invariant: 'ADR-0050',
+    breaks: 'moving a hot function OUT of hot/, where the directory-derived coverage lost it',
+    edits: [
+      [
+        'packages/sim/src/world.ts',
+        (s) => `${s}\nexport function scanRegion(cells: Uint16Array, from: number): number {\n  return cells[from] ?? 0;\n}\n`,
+      ],
+      ['packages/sim/src/index.ts', (s) => s.replace('  viewWorld,', '  viewWorld,\n  scanRegion,')],
+    ],
+    tool: 'pnpm vitest run tests/hot-allocation',
+    expect: /accounts for every callable/,
+  },
+  {
+    invariant: '7 / ADR-0051',
+    breaks: 'reversing the loader pre-sort, which removing it did not reveal',
+    edits: [
+      [
+        'packages/runtime/src/loader.ts',
+        (s) =>
+          s.replace(
+            'return ok([...found.value].sort(compareCodeUnits));',
+            'return ok([...found.value].sort(compareCodeUnits).reverse());',
+          ),
+      ],
+    ],
+    // Deletion and inversion are different failures. The old test asserted only that two orderings
+    // produced the SAME message, which a reversed sort satisfies perfectly.
+    tool: 'pnpm vitest run packages/runtime',
+    expect: /incumbent/,
   },
   {
     invariant: '3',

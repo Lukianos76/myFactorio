@@ -1,35 +1,66 @@
-import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { copyRegion, countValue, fillRegion, findFirst } from '@myfactorio/sim';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
- * Which functions this file exercises, derived from the directory rather than remembered.
+ * Which functions this file must account for, derived from what `sim` exports.
  *
- * The mechanism below is sound and its reach was a hand-written import list, so a new hot function
- * was measured by nobody: one with a `subarray` per cell was added during review and passed. That is
- * the quieter version of the failure this repository keeps finding — not a broken instrument, a
- * correct instrument pointed at a list somebody has to maintain.
+ * The first version imported four names by hand, so a fifth hot function was measured by nobody.
+ * The second derived them from the contents of `packages/sim/src/hot/` — which closed that, and
+ * re-anchored the guarantee on a directory name, the very thing ADR-0036 says is "not a property of
+ * the code". Moving a hot function to `sim/src/step.ts` took it out of the lint and out of the
+ * derivation in one gesture.
  *
- * Arities differ, so the calls below cannot be generated. What can be generated is the set of names
- * that must appear in them, and omitting one is now a failure rather than an oversight.
+ * "Exported by sim" IS a property of the code. Every exported callable is either exercised here or
+ * declared cold with a reason, and the two sets must together be exactly what sim exports. A
+ * function that moves between directories stays in the set; a new one has to be classified.
+ *
+ * The remaining edge, stated rather than left implicit: a hot function that sim does not export
+ * escapes this. It is then unreachable from outside the package, and the lint on `hot/` still
+ * applies if it lives there.
  */
-function hotExports(): string[] {
-  const hotDir = path.join(repoRoot, 'packages/sim/src/hot');
-  return readdirSync(hotDir)
-    .filter((file) => file.endsWith('.ts') && !file.includes('.test.'))
-    .flatMap((file) => [
-      ...readFileSync(path.join(hotDir, file), 'utf8').matchAll(/^export function (\w+)/gm),
-    ])
-    .map((match) => match[1]!)
+function exportedCallables(): string[] {
+  const entry = path.join(repoRoot, 'packages/sim/src/index.ts');
+  const program = ts.createProgram([entry], {
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    strict: true,
+    noEmit: true,
+    skipLibCheck: true,
+  });
+  const checker = program.getTypeChecker();
+  const source = program.getSourceFile(entry);
+  if (!source) throw new Error('sim entry point not found');
+  const moduleSymbol = checker.getSymbolAtLocation(source);
+  if (!moduleSymbol) throw new Error('sim module symbol not found');
+
+  return checker
+    .getExportsOfModule(moduleSymbol)
+    .filter((symbol) => {
+      const type = checker.getTypeOfSymbolAtLocation(symbol, source);
+      return type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0;
+    })
+    .map((symbol) => symbol.getName())
     .sort();
 }
 
-/** Every hot function called in the measurement below. Kept honest by the test at the end. */
-const EXERCISED = ['copyRegion', 'countValue', 'fillRegion', 'findFirst'] as const;
+/** Called in the measurement below. */
+const EXERCISED = ['copyRegion', 'countValue', 'fillRegion', 'findFirst'];
+
+/** Not on the hot path, each for a reason worth stating rather than a name worth listing. */
+const COLD: Readonly<Record<string, string>> = {
+  attachSimPort: 'host-side, called once at startup',
+  boundaryMessage: 'a type-level gate, identity at run time',
+  sealAmbientSources: 'called once, before anything else, in the worker',
+  viewWorld: 'creates the typed-array views; allocating is its whole job',
+  worldByteLength: 'arithmetic on a spec, called at setup',
+  NonDeterminismError: 'an error class, constructed only on the failure path',
+};
 
 /**
  * Invariant 5, measured rather than described.
@@ -128,9 +159,11 @@ describe('invariant: the hot path allocates nothing', () => {
 
   sink.length = 0;
 
-  it('measures every function in hot/, not a list somebody remembered to update', () => {
-    // A new hot function that nobody adds to EXERCISED fails here instead of going unmeasured.
-    expect(hotExports()).toEqual([...EXERCISED].sort());
+  it('accounts for every callable sim exports, hot or cold', () => {
+    // A new export is either measured or classified. Silence is not one of the options, and moving
+    // a function between directories does not change the answer.
+    const accounted = [...EXERCISED, ...Object.keys(COLD)].sort();
+    expect(exportedCallables()).toEqual(accounted);
   });
 
   it('the instrument can detect allocation at all', () => {

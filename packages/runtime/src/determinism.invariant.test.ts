@@ -92,10 +92,11 @@ describe('invariant: loading is deterministic regardless of directory enumeratio
    * which of two conflicting packs is reported as the incumbent. Without it, two players with the
    * same broken mod set get different error messages, and a bug report becomes unreproducible.
    */
-  it('reports the same duplicate-namespace conflict regardless of enumeration order', async () => {
+  it('names the lexicographically first pack as the incumbent of a conflict', async () => {
     const packsDir = await mkdtemp(path.join(tmpdir(), 'myfactorio-duplicate-'));
     dirs.push(packsDir);
-    for (const dirName of ['a_first', 'z_last']) {
+    // Created in reverse, so creation order and lexicographic order disagree.
+    for (const dirName of ['z_last', 'a_first']) {
       const dir = path.join(packsDir, dirName);
       await mkdir(dir, { recursive: true });
       await writeFile(
@@ -106,13 +107,32 @@ describe('invariant: loading is deterministic regardless of directory enumeratio
 
     const forward = await loadPacks({ packsDir, entries: ['a_first', 'z_last'] });
     const backward = await loadPacks({ packsDir, entries: ['z_last', 'a_first'] });
+    const enumerated = await loadPacks({ packsDir });
 
-    expect(forward.ok).toBe(false);
-    expect(backward.ok).toBe(false);
-    if (forward.ok || backward.ok) return;
+    for (const result of [forward, backward, enumerated]) {
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('duplicate-namespace');
 
-    expect(forward.error.code).toBe('duplicate-namespace');
-    expect(backward.error.message).toBe(forward.error.message);
+      /*
+       * The WHICH, not just the stability.
+       *
+       * The previous version asserted only that the two messages were equal, which any
+       * deterministic function of the input satisfies — including reversing the sort. That is how
+       * the pre-sort came to be replaceable by `.sort(...).reverse()` with 29 runtime tests still
+       * green, and it is ADR-0023 recurring inside the test written to fix a different mock
+       * problem.
+       *
+       * The duplicate check runs BEFORE the topological sort, so the tie-break cannot reach this:
+       * whichever pack the enumeration presents first becomes the incumbent, and only the pre-sort
+       * decides that. Asserting the load order instead proves nothing, because the tie-break
+       * guarantees it whatever arrives.
+       */
+      expect(result.error.message.indexOf('a_first')).toBeGreaterThanOrEqual(0);
+      expect(result.error.message.indexOf('a_first')).toBeLessThan(
+        result.error.message.indexOf('z_last'),
+      );
+    }
   });
 
   /**
