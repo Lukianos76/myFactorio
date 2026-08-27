@@ -2,47 +2,46 @@
 
 *Snapshot. Rewrite this file at the end of every session; do not append to it.*
 
-**Where we are.** The skeleton and its guardrails exist, and nothing else. Eight packages
-(`kernel`, `rules-schema`, `isa`, `rules-compiler`, `sim`, `save`, `runtime`, `modding-api`), an
-Electron shell in `apps/desktop`, an empty base content pack in `packs/core-empty`, three scripts in
-`tools/`. `pnpm check` is green in **12.5 s** against a 30 s target, so the `check:full` fallback
-from ADR-0017 was never needed and the script was removed rather than left as a misleading alias.
-71 tests pass. `pnpm verify:guardrails` reports **17/17**. There is deliberately no gameplay: no
-rendering, no elements, no game loop, no opcode that expresses a rule of play.
+**Where we are.** The skeleton and its guardrails, and nothing else. Eight packages, an Electron
+shell, an empty base content pack, four scripts in `tools/`. No gameplay: no rendering, no elements,
+no game loop, no opcode that expresses a rule of play. Current, measured, on `adversarial-review`:
 
-**What is in place and how it is held.** Every invariant is enforced by a tool: dependency-cruiser
-generates one layer rule per package from a single `LAYERS` array, plus `save-no-isa` and
-`sim-no-compiler`; `ContentId` is branded and mintable only by `parseContentId`; saves carry a
-palette typed `ContentId[]`; `TransferSafe` makes a non-integer worker payload fail to compile;
-`DataOnly` plus a compiler-API test keep functions out of `sim`'s surface; the hot-path allocation
-lint is scoped to function bodies with `noInlineConfig` so suppressions are inert; the loader has no
-branch for the base pack; load order is deterministic. Guardrails on the guardrails: the root
-`CLAUDE.md` is capped at 50 lines by a test, a test asserts the *effective* ESLint config still
-carries the shared selectors, and invariant tests are named `*.invariant.test.ts` so a future
-session knows a red one means the code is wrong. History is red-then-green on purpose, so
-"these went from failing to passing" is checkable rather than asserted.
+```
+pnpm check          14.0 s   144 tests, 56 modules cruised, 17 dependency rules
+pnpm verify:guardrails  31/31   in an isolated worktree, ~60 s
+pnpm e2e:no-core        11/11   real Electron, both paths
+docs/decisions.md       46 ADRs
+```
 
-**What the verification pass changed.** Running `verify-guardrails` for the first time scored 13/16
-and every miss was real. `sim` could import `rules-compiler` — the ranks permit that edge, so
-extracting `isa` had removed the *need* and not the *possibility*, and ADR-0005 said otherwise
-(corrected by ADR-0020, now closed by `sim-no-compiler`). The `ContentId` cast ban was dead across
-all of `packages/` because flat config replaces rule options instead of merging them, so a later
-block had silently discarded it while the source still read as enabled (ADR-0021). And neither
-determinism mechanism was actually under test: the loader pre-sort and the topological tie-break
-each masked the other's absence (ADR-0022, ADR-0023). Three plausible, documented, wrong claims,
-all of which survived until a rule was deliberately broken.
+**What the adversarial review changed.** Two rounds of review broke the guardrails rather than
+reading them, and found 24 bypasses that passed `pnpm check`. The pattern behind almost all of them:
+*a guardrail names a mechanism, and the invariant is always wider than the mechanism, so the door
+that gets used is the one the list does not name.* `Math.random` was banned and
+`crypto.getRandomValues` was not. `save` could not import `isa` but `apps` could write the bytecode.
+"Hot" was a folder name, so the allocation moved one folder up. Four guardrails were rebuilt to
+constrain the fact instead of the syntax: `SimPort` closes the worker channel rather than guarding
+it, `sealAmbientSources()` replaces the functions themselves, hot-path allocation is measured
+against a negative control, and the `ContentId` brand is now documented as the speed bump it is
+rather than the wall it was claimed to be. The reserved namespace was deleted outright — its
+authorisation token was a directory name, so it protected nothing; a collision is now the ordinary
+duplicate check, and the guarantee comes from the absence of a mechanism.
 
-**Open, and next.** `pnpm e2e:no-core` now runs and passes, both paths. With no content directory
-the shell opens, reports the missing `pack.json` by name and exits 0. With the shipped pack it
-loads `core` through the ordinary mod path, the renderer comes up cross-origin isolated, the worker
-boots over the `SharedArrayBuffer` and answers an integer-only message — so invariant 3 is observed
-at runtime rather than only enforced at compile time. Getting there cost two fixes worth knowing
-about: `electron` must stay external in the main bundle or it inlines a shim that spawns
-`install.js` and dies claiming it is not installed (ADR-0024), and the renderer signals completion
-itself instead of main reading its DOM after `loadURL`, which would have raced on a slower machine
-(ADR-0025). Two absences are by design and will bite the first
-person who meets them: there is no seeded PRNG, so the ban on `Math.random` leaves `sim` with no
-randomness at all (ADR-0011), and plain `+` string concatenation escapes the hot-path lint because
-type-aware linting was rejected for speed (ADR-0010). The natural next milestone is the first real
-element, which forces both the PRNG decision and the question of what a rule schema needs beyond an
-id and a constant pool.
+**What kept going wrong, and is now mechanical.** Three claims in the docs were plausible and false
+until someone broke a rule (ADR-0020, ADR-0022, ADR-0026), so `tests/doctrine.invariant.test.ts`
+turns every `## Must never` line into an executable requirement. `pnpm check` ran only when a human
+typed it, so there is CI. `verify-guardrails` edited the working tree and clobbered a reviewer
+mid-review, so it runs in a throwaway worktree. Four scripted edits failed silently while printing
+success — one of them produced a verifier case that could not fail and sat in the score for two
+sessions (ADR-0031). And "exit 0" was taken as proof four separate times: dependency-cruiser's API
+needs `validate: true`, `git status --porcelain` always exits 0, `git worktree remove` leaves
+`node_modules`, `unrepresentable: 'throw'` does not throw on `.refine()` (ADR-0030).
+
+**Open.** The CI workflow has still never run — its YAML parses and `--frozen-lockfile` holds
+locally, and that is the whole of the evidence; the first push is the test. Known and deliberate
+gaps: no seeded PRNG, so `sim` has no randomness at all by design (ADR-0011); a generic
+`brand<T>()` helper still launders any string into a `ContentId` and no syntactic rule can see it
+(ADR-0037); `const M = Math` passes the lint, which is why the runtime seal exists; plain `+` string
+concatenation escapes the hot-path lint, though the heap measurement catches it in volume.
+`apps/` is covered only by the e2e. The natural next milestone is the first real element, which
+forces the PRNG decision and the question of what a rule schema needs beyond an id and a constant
+pool.
